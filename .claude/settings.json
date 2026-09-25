@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "PowerShell(./.claude/scripts/verify.ps1:*)",
+      "PowerShell(.\\.claude\\scripts\\verify.ps1:*)",
+      "PowerShell(./.claude/scripts/verify.ps1 *)",
+      "PowerShell(.\\.claude\\scripts\\verify.ps1 *)",
+      "PowerShell(powershell -NoProfile -ExecutionPolicy Bypass -File ./.claude/scripts/verify.ps1:*)",
+      "PowerShell(powershell -NoProfile -ExecutionPolicy Bypass -File .\\.claude\\scripts\\verify.ps1:*)",
+      "Bash(powershell -NoProfile -ExecutionPolicy Bypass -File ./.claude/scripts/verify.ps1:*)"
+    ],
+    "ask": [],
+    "deny": []
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell",
+            "args": [
+              "-NoProfile",
+              "-ExecutionPolicy",
+              "Bypass",
+              "-File",
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/record-session-baseline.ps1"
+            ],
+            "timeout": 60,
+            "statusMessage": "Recording source baseline"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell",
+            "args": [
+              "-NoProfile",
+              "-ExecutionPolicy",
+              "Bypass",
+              "-File",
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/block-secret-commit.ps1"
+            ],
+            "timeout": 20,
+            "statusMessage": "Checking staged changes for secrets"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell",
+            "args": [
+              "-NoProfile",
+              "-ExecutionPolicy",
+              "Bypass",
+              "-File",
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/require-verification.ps1"
+            ],
+            "timeout": 120,
+            "statusMessage": "Checking verification status"
+          }
+        ]
+      }
+    ]
+  }
+}

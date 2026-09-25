@@ -1,0 +1,7 @@
+# why: render-mascot.ps1 writes LF and the self-test compares the committed svgs byte for byte;
+# core.autocrlf=true would check them out as CRLF and make every fresh render look out of date.
+docs/assets/**/*.svg text eol=lf
+
+# why: cmd.exe misreads a batch file with LF line endings ("'m' is not recognized"), so the
+# launcher must be CRLF in every clone and archive, whatever core.autocrlf says.
+*.cmd text eol=crlf

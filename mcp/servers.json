@@ -1,0 +1,31 @@
+{
+  "$comment": "User-scope MCP servers, registered by scripts/install-mcp.ps1 during setup. Project-scope servers live in mcp/catalog.json and are added with `tazuna mcp add <name>`. Secrets must be written as ${ENV_VAR} placeholders, never literals.",
+  "mcpServers": {
+    "context7": {
+      "type": "http",
+      "url": "https://mcp.context7.com/mcp",
+      "$why": "Version-accurate library documentation. Two read-only tools. See docs/mcp.md for the five answers this required. Works without an API key; for higher rate limits get one at context7.com/dashboard and add \"headers\": { \"Authorization\": \"Bearer ${CONTEXT7_API_KEY}\" } here - the placeholder, never the value."
+    },
+    "playwright": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@playwright/mcp@latest",
+        "--isolated"
+      ],
+      "$install": "winget install OpenJS.NodeJS.LTS",
+      "$warm": "npx -y @playwright/mcp@latest --version",
+      "$why": "The browser as a sensor: open the app, click, fill forms, look at the result after a UI change. 25 tools in every session, all answered with ask by the permission model. --isolated keeps the browser profile in memory so a session does not accumulate cookies."
+    },
+    "agent-skills": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@tech-leads-club/agent-skills-mcp@0.1.6"
+      ],
+      "$install": "winget install OpenJS.NodeJS.LTS",
+      "$warm": "npx -y -p @tech-leads-club/agent-skills-mcp@0.1.6 node -e 0",
+      "$why": "Search and load any skill of the Tech Leads Club catalog on demand, without installing it: four read tools, progressive disclosure."
+    }
+  }
+}

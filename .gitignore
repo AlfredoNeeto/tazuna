@@ -1,0 +1,70 @@
+# ---------------------------------------------------------------------------
+# Claude credentials and private state.
+# These must never be committed. The harness installer never copies them
+# either; they are listed here as a second line of defence.
+# ---------------------------------------------------------------------------
+.credentials.json
+.claude.json
+.claude.json.backup*
+
+# Claude Code state, in case a config directory is ever copied into this checkout.
+# why: anchored at the root, so a directory of the same name inside the repository is not ignored.
+/projects/
+/sessions/
+/session-env/
+/shell-snapshots/
+/statsig/
+/telemetry/
+/todos/
+/cache/
+/paste-cache/
+/downloads/
+/backups/
+/plugins/
+history.jsonl
+.last-cleanup
+
+# Machine-specific settings overlay
+settings.local.json
+
+# Harness backups written next to an installed harness
+.harness-backup/
+
+# Environment / secrets
+.env
+.env.*
+*.secret
+*.secrets
+*.key
+*.pem
+*.pfx
+*.p12
+id_rsa*
+id_ed25519*
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Temporary files
+*.tmp
+*.log
+
+# Claude Code harness
+.claude/state/
+
+# harness-toolkit session state: handoff, observability, lessons. Machine-local.
+# **/ because the toolkit writes it wherever Claude Code was opened, which can be
+# a subdirectory.
+**/.tlc/harness/state/
+
+# Working specs from the tlc-* skills (plans, checks, Verifier reports). Local to the
+# maintainer; the published repository carries the result, not the process.
+.specs/
+
+# Serena writes this into every repository it activates. It carries no value
+# here: its PowerShell language server needs pwsh, and this repository targets
+# Windows PowerShell 5.1.
+.serena/

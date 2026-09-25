@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Read(~/.claude/skills/**)",
+      "Bash(dotnet restore:*)",
+      "Bash(dotnet build:*)",
+      "Bash(dotnet test:*)",
+      "Bash(dotnet --version)",
+      "Bash(dotnet --list-sdks)",
+      "Bash(dotnet --info)",
+      "Bash(dotnet format --verify-no-changes:*)",
+      "Bash(dotnet list package:*)",
+      "Bash(dotnet sln list)",
+      "PowerShell(dotnet restore:*)",
+      "PowerShell(dotnet build:*)",
+      "PowerShell(dotnet test:*)",
+      "PowerShell(dotnet --version)",
+      "PowerShell(dotnet --list-sdks)",
+      "PowerShell(dotnet --info)",
+      "PowerShell(dotnet format --verify-no-changes:*)",
+      "PowerShell(dotnet list package:*)",
+      "PowerShell(dotnet sln list)",
+      "PowerShell(dotnet.exe restore:*)",
+      "PowerShell(dotnet.exe build:*)",
+      "PowerShell(dotnet.exe test:*)",
+      "PowerShell(./.claude/scripts/verify.ps1:*)",
+      "PowerShell(.\\.claude\\scripts\\verify.ps1:*)",
+      "PowerShell(./.claude/scripts/verify.ps1 *)",
+      "PowerShell(.\\.claude\\scripts\\verify.ps1 *)",
+      "PowerShell(powershell -NoProfile -ExecutionPolicy Bypass -File ./.claude/scripts/verify.ps1:*)",
+      "PowerShell(powershell -NoProfile -ExecutionPolicy Bypass -File .\\.claude\\scripts\\verify.ps1:*)",
+      "Bash(powershell -NoProfile -ExecutionPolicy Bypass -File ./.claude/scripts/verify.ps1:*)"
+    ],
+    "ask": [
+      "Bash(dotnet add package:*)",
+      "Bash(dotnet remove package:*)",
+      "Bash(dotnet new:*)",
+      "Bash(dotnet sln add:*)",
+      "Bash(dotnet sln remove:*)",
+      "Bash(dotnet ef:*)",
+      "Bash(dotnet publish:*)",
+      "Bash(dotnet format:*)",
+      "PowerShell(dotnet add package:*)",
+      "PowerShell(dotnet remove package:*)",
+      "PowerShell(dotnet new:*)",
+      "PowerShell(dotnet sln add:*)",
+      "PowerShell(dotnet sln remove:*)",
+      "PowerShell(dotnet ef:*)",
+      "PowerShell(dotnet publish:*)",
+      "PowerShell(dotnet format:*)"
+    ],
+    "deny": [
+      "Bash(dotnet nuget push:*)",
+      "Bash(dotnet nuget delete:*)",
+      "Bash(dotnet ef database update:*)",
+      "Bash(dotnet ef database drop:*)",
+      "PowerShell(dotnet nuget push:*)",
+      "PowerShell(dotnet nuget delete:*)",
+      "PowerShell(dotnet ef database update:*)",
+      "PowerShell(dotnet ef database drop:*)"
+    ],
+    "blockReadsOutsideWorkingDirectories": true
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell",
+            "args": [
+              "-NoProfile",
+              "-ExecutionPolicy",
+              "Bypass",
+              "-File",
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/record-session-baseline.ps1"
+            ],
+            "timeout": 60,
+            "statusMessage": "Recording source baseline"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell",
+            "args": [
+              "-NoProfile",
+              "-ExecutionPolicy",
+              "Bypass",
+              "-File",
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/block-secret-commit.ps1"
+            ],
+            "timeout": 20,
+            "statusMessage": "Checking staged changes for secrets"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell",
+            "args": [
+              "-NoProfile",
+              "-ExecutionPolicy",
+              "Bypass",
+              "-File",
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/require-verification.ps1"
+            ],
+            "timeout": 120,
+            "statusMessage": "Checking verification status"
+          }
+        ]
+      }
+    ]
+  }
+}

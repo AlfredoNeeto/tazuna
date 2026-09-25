@@ -1,0 +1,79 @@
+{
+  "$comment": "Project-scope MCP servers. `tazuna mcp add <name>` merges `server` into the project's .mcp.json and enables it in .claude/settings.json. Credentials only as ${ENV_VAR} placeholders.",
+  "servers": {
+    "azure-devops": {
+      "purpose": "On-premises Azure DevOps Server: pull requests, work items, wiki, search (PAT, API 7.0)",
+      "requires": "npx",
+      "server": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "@tiberriver256/mcp-server-azure-devops"
+        ],
+        "env": {
+          "AZURE_DEVOPS_ORG_URL": "${ADO_COLLECTION_URL}",
+          "AZURE_DEVOPS_AUTH_METHOD": "pat",
+          "AZURE_DEVOPS_PAT": "${ADO_PAT}",
+          "AZURE_DEVOPS_API_VERSION": "7.0"
+        }
+      }
+    },
+    "serena": {
+      "purpose": "Symbol navigation through a language server: callers, implementations, declarations",
+      "requires": "uvx",
+      "install": "irm https://astral.sh/uv/install.ps1 | iex",
+      "server": {
+        "command": "uvx",
+        "args": [
+          "--from",
+          "serena-agent@1.7.0",
+          "serena",
+          "start-mcp-server",
+          "--context",
+          "ide-assistant",
+          "--project-from-cwd",
+          "--enable-web-dashboard",
+          "false",
+          "--enable-gui-log-window",
+          "false"
+        ]
+      }
+    },
+    "drawio": {
+      "purpose": "Open and edit diagrams in the draw.io editor",
+      "requires": "npx",
+      "server": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "@drawio/mcp@1.6.1"
+        ]
+      }
+    },
+    "plantuml": {
+      "purpose": "Render PlantUML diagrams; the diagram source goes to PLANTUML_SERVER_URL (public plantuml.com unless you set it)",
+      "requires": "npx",
+      "server": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "plantuml-mcp-server@0.2.4"
+        ],
+        "env": {
+          "PLANTUML_SERVER_URL": "${PLANTUML_SERVER_URL:-https://www.plantuml.com/plantuml}"
+        }
+      }
+    },
+    "mermaid": {
+      "purpose": "Render Mermaid diagrams and charts locally to SVG or PNG",
+      "requires": "npx",
+      "server": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "mcp-mermaid@0.4.1"
+        ]
+      }
+    }
+  }
+}
