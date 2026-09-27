@@ -3514,7 +3514,7 @@ try {
         # A text sprite: palette lines, "---", then rows. Read here on its own so the
         # test does not trust the renderer's parser.
         param([string]$Path)
-        $colours = @{}
+        $colours = New-Object System.Collections.Hashtable ([System.StringComparer]::Ordinal)
         $rows = @()
         $inGrid = $false
         foreach ($line in [System.IO.File]::ReadAllLines($Path)) {
@@ -3959,6 +3959,22 @@ try {
         if ($run.Code -ne 0) { return "the re-render exited $($run.Code): $($run.Output)" }
         $differs = @(Compare-RenderedSvg -Root $root)
         if ($differs -notcontains "view-front.svg") { return ("the changed source was reported as: " + ($differs -join ", ")) }
+        return $true
+    }
+
+    Test-Case -Name "M32 a lower-case and an upper-case character keep their own colours in the reader and the render" -Check {
+        $root = Copy-MascotScratch
+        Remove-RenderedOutput -Root $root
+        $path = Join-Path $root "docs\assets\tazuna\src\case-pair.txt"
+        $grid = @("A #e3b25b", "a #b4833a", "---") + @(1..64 | ForEach-Object { ("Aa" * 32) })
+        Set-Content -LiteralPath $path -Value ($grid -join "`n")
+        $read = Read-SpriteGrid -Path $path
+        $pair = @((Get-SpriteHex -Grid $read -X 0 -Y 0), (Get-SpriteHex -Grid $read -X 1 -Y 0))
+        if (($pair -join ",") -ne "#e3b25b,#b4833a") { return ("the reader saw A,a as " + ($pair -join ",")) }
+        $run = Invoke-MascotRenderer -Root $root
+        if ($run.Code -ne 0) { return "the renderer exited $($run.Code): $($run.Output)" }
+        $svg = [System.IO.File]::ReadAllText((Join-Path $root "docs\assets\tazuna\case-pair.svg"))
+        foreach ($hex in @("#e3b25b", "#b4833a")) { if (-not $svg.Contains('fill="' + $hex + '"')) { return "case-pair.svg has no $hex" } }
         return $true
     }
 

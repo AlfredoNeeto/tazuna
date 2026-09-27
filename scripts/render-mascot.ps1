@@ -67,7 +67,8 @@ function Read-Sprite {
     $name = [System.IO.Path]::GetFileNameWithoutExtension($Path)
     $relative = Get-RelativeAssetPath -Path $Path
     $lines = [System.IO.File]::ReadAllLines($Path)
-    $colours = @{}
+    # why: @{} ignores case, and the palette gives "a" and "A" different colours.
+    $colours = New-Object System.Collections.Hashtable ([System.StringComparer]::Ordinal)
     $rows = @()
     $inGrid = $false
     $lineNumber = 0
@@ -129,7 +130,7 @@ function Read-Sprite {
 function Get-SpriteRects {
     param($Sprite)
 
-    $runs = [ordered]@{}
+    $runs = New-Object System.Collections.Specialized.OrderedDictionary ([System.StringComparer]::Ordinal)
 
     for ($y = 0; $y -lt $Sprite.Height; $y++) {
 
@@ -143,7 +144,7 @@ function Get-SpriteRects {
             if ($ch -eq ".") { $x++; continue }
 
             $start = $x
-            while (($x -lt $Sprite.Width) -and ([string]$row[$x] -eq $ch)) { $x++ }
+            while (($x -lt $Sprite.Width) -and ([string]$row[$x] -ceq $ch)) { $x++ }
 
             if (-not $runs.Contains($ch)) { $runs[$ch] = New-Object System.Text.StringBuilder }
             [void]$runs[$ch].Append("M$start ${y}h$($x - $start)v1h-$($x - $start)z")
