@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.1.1
+
+### Changed
+
+- The mascot is now Frenatus, a barded black Andalusian horse in tenebrist pixel art whose two
+  reins leave the picture toward the harness that holds them. The seal on its chanfron lights on a
+  passed verification and cracks on a failed one. It replaces Tameshi; see
+  [docs/mascot.md](docs/mascot.md).
+- The banner and the social preview name Claude Code and Cursor, and a lead line from the horse
+  runs under the five steps.
+- The README wears the mascot's palette: an epigraph opens each section, gilded dividers separate
+  them, and the badges and diagrams take their colours from it.
+
 ## 1.1.0
 
 ### Added

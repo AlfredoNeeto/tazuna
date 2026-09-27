@@ -1,16 +1,17 @@
 <div align="center">
 
-<img src="docs/assets/banner.svg" alt="Tameshi, the Tazuna mascot, a pixel-art samurai in armour, beside the title Tazuna" width="100%">
+<img src="docs/assets/banner.svg" alt="Frenatus, the Tazuna mascot, a barded black horse in tenebrist pixel art, its lead line running under the five steps beside the title Tazuna" width="100%">
 
 <h1>Tazuna</h1>
 
-[![version](https://img.shields.io/badge/version-1.1.0-d97757?style=flat-square&labelColor=141413)](CHANGELOG.md)
-[![Claude Code](https://img.shields.io/badge/Claude%20Code-2.1.277%2B-d97757?style=flat-square&logo=claude&logoColor=d97757&labelColor=141413)](https://docs.claude.com/en/docs/claude-code/overview)
-[![Windows PowerShell](https://img.shields.io/badge/Windows%20PowerShell-5.1-d97757?style=flat-square&labelColor=141413)](#prerequisites)
-[![license](https://img.shields.io/badge/license-MIT-b0aea5?style=flat-square&labelColor=141413)](LICENSE)
+[![version](https://img.shields.io/badge/version-1.1.1-bd2e37?style=flat-square&labelColor=0c0809)](CHANGELOG.md)
+[![Claude Code](https://img.shields.io/badge/Claude%20Code-2.1.277%2B-7f1721?style=flat-square&logo=claude&logoColor=d9a948&labelColor=0c0809)](https://docs.claude.com/en/docs/claude-code/overview)
+[![Windows PowerShell](https://img.shields.io/badge/Windows%20PowerShell-5.1-6a4716?style=flat-square&labelColor=0c0809)](#prerequisites)
+[![license](https://img.shields.io/badge/license-MIT-a5752a?style=flat-square&labelColor=0c0809)](LICENSE)
 
-A verification gate for Claude Code that works in any stack, with the Tech Leads Club workflow
-ready to use on Windows. One command sets up the machine, one command sets up a project.
+*No turn ends on untested code. The seal lights only for what was proven.*
+
+A verification gate for Claude Code that works in any stack, with the Tech Leads Club workflow ready to use on Windows. One command sets up the machine, one command sets up a project.
 
 [Getting started](#getting-started) · [Usage](#usage) · [Report a problem](https://github.com/AlfredoNeeto/tazuna/issues)
 
@@ -33,22 +34,17 @@ ready to use on Windows. One command sets up the machine, one command sets up a 
 
 ## About the project
 
-A coding agent tends to end its turn with "done" on code that nobody ran. More rules in the
-prompt do not fix that. What fixes it is little context, room to implement, and proof that the
-result is right, checked by someone who did not write it. Tazuna sets that up for Claude Code and
-enforces the step that matters most: a turn that changed code cannot end quietly, because the
-agent is sent back to run the project's own build and tests first.
+> *No work is finished because its author says so.*
 
-Tazuna (手綱) means reins, the part of a horse's harness the rider holds. In the writing on
-agents, *Agent = Model + Harness*, and a harness combines guides, which steer the agent before it
-acts (`AGENTS.md`, rules, skills, permissions), with sensors, which check the result afterwards
-(`verify.ps1`, the Verifier, `/review-change`). Reins do both: they steer the horse and let the
-rider feel it. The strength is still the horse's.
+A coding agent tends to end its turn with "done" on code that nobody ran. More rules in the prompt do not fix that. What fixes it is little context, room to implement, and proof that the result is right, checked by someone who did not write it. Tazuna sets that up for Claude Code and enforces the step that matters most: a turn that changed code cannot end quietly, because the agent is sent back to run the project's own build and tests first.
 
-Tazuna itself is small: it installs the Tech Leads Club's `tlc-*` skills and `harness-toolkit`,
-adds its own verification gate and `/review-change`, and leaves everything else to your repository.
+Tazuna (手綱) means reins, the part of a horse's harness the rider holds. In the writing on agents, *Agent = Model + Harness*, and a harness combines guides, which steer the agent before it acts (`AGENTS.md`, rules, skills, permissions), with sensors, which check the result afterwards (`verify.ps1`, the Verifier, `/review-change`). Reins do both: they steer the horse and let the rider feel it. The strength is still the horse's.
+
+Tazuna itself is small: it installs the Tech Leads Club's `tlc-*` skills and `harness-toolkit`, adds its own verification gate and `/review-change`, and leaves everything else to your repository.
 
 ## Getting started
+
+> *Before the vigil, the vessel is prepared.*
 
 ### Prerequisites
 
@@ -74,13 +70,7 @@ git clone https://github.com/AlfredoNeeto/tazuna.git "$HOME\tazuna"; & "$HOME\ta
 $env:Path += ";$HOME\tazuna\bin"
 ```
 
-`setup` copies `user/` into `~/.claude`, installs `harness-toolkit` 0.16.2 and runs
-`tlc harness install`, installs the `tlc-*` and `harness-eval` skills, the `ponytail` plugin and
-the user MCP servers, then runs `tazuna doctor`. Running it again repairs a machine that drifted.
-It replaces `~/.claude/settings.json` and `~/.claude/CLAUDE.md` with Tazuna's and keeps a backup of
-yours in `~/.claude\.harness-backup\`; those settings also switch off the claude.ai connectors and
-sync (`disableClaudeAiConnectors`). Run `setup` and `update` outside Claude Code, and call
-`bin\tazuna.cmd` rather than the `.ps1`, which an `AllSigned` execution policy blocks.
+`setup` copies `user/` into `~/.claude`, installs `harness-toolkit` 0.16.2 and runs `tlc harness install`, installs the `tlc-*` and `harness-eval` skills, the `ponytail` plugin and the user MCP servers, then runs `tazuna doctor`. Running it again repairs a machine that drifted. It replaces `~/.claude/settings.json` and `~/.claude/CLAUDE.md` with Tazuna's and keeps a backup of yours in `~/.claude\.harness-backup\`; those settings also switch off the claude.ai connectors and sync (`disableClaudeAiConnectors`). Run `setup` and `update` outside Claude Code, and call `bin\tazuna.cmd` rather than the `.ps1`, which an `AllSigned` execution policy blocks.
 
 ### Your first project
 
@@ -89,13 +79,13 @@ cd C:\src\MyApi
 tazuna init
 ```
 
-`init` detects the stack (`dotnet` or `generic`) and writes `AGENTS.md` plus `.claude\` with the
-permissions, the three hooks, stack rules and `scripts\verify.ps1`, the project's build and tests.
-It also trusts the workspace, since Claude Code silently ignores project hooks otherwise, and it
-never overwrites a file you edited unless you pass `-Force`. In `AGENTS.md`, write only what the
-code does not show; every line there goes into every turn.
+`init` detects the stack (`dotnet` or `generic`) and writes `AGENTS.md` plus `.claude\` with the permissions, the three hooks, stack rules and `scripts\verify.ps1`, the project's build and tests. It also trusts the workspace, since Claude Code silently ignores project hooks otherwise, and it never overwrites a file you edited unless you pass `-Force`. In `AGENTS.md`, write only what the code does not show; every line there goes into every turn.
+
+<p align="center"><img src="docs/assets/divider.svg" alt="Ornamental divider in gold, lit from the left" width="480"></p>
 
 ## Usage
+
+> *Every work is weighed. None leaves the forge untested.*
 
 ### The loop
 
@@ -113,10 +103,12 @@ stateDiagram-v2
     Verify --> Review: every check passes
     Review --> Human
     Human --> [*]
-    classDef optional stroke-dasharray: 5 5
-    classDef enforced stroke-width: 3px
+    classDef optional fill:#2f2530,stroke:#a5752a,color:#e2d6bb,stroke-dasharray: 5 5
+    classDef enforced fill:#7f1721,stroke:#d9a948,color:#e2d6bb,stroke-width: 3px
+    classDef rite fill:#2f2530,stroke:#a5752a,color:#e2d6bb
     class Discovery,Plan,Checks,Review optional
     class Verify enforced
+    class Build,Human rite
 ```
 
 `Verify` is enforced: the `Stop` gate requires a passing `verify.ps1` on every change, in every project, and rejects a Verifier report that fails its validator. The dashed steps depend on the workflow you choose.
@@ -124,6 +116,7 @@ stateDiagram-v2
 ### Choosing a workflow
 
 ```mermaid
+%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#2f2530', 'primaryTextColor': '#e2d6bb', 'primaryBorderColor': '#a5752a', 'lineColor': '#bd2e37', 'secondaryColor': '#7f1721', 'tertiaryColor': '#3a2215', 'edgeLabelBackground': '#3e0c13', 'fontFamily': 'Georgia, serif'}}}%%
 flowchart TD
     start(( )) --> decided{"Decided in a work item, PRD or RFC?"}
     decided -->|"[yes]"| plan["/tlc-plan cuts it into tasks, /tlc-implement builds each one"]
@@ -151,10 +144,7 @@ flowchart TD
 | Work already decided in a work item, PRD or RFC | `/tlc-plan` to cut it into tasks, `/tlc-implement` to build each one |
 | Risky: security, money, data, a public contract | `/review-change`, even when the change is small |
 
-With `/tlc-spec-lean I want X`, the agent reads the code, asks only what is your decision, writes
-`.specs/features/<feature>/plan.md` and stops until you approve it. Each criterion becomes a check
-with the test that settles it; the agent builds, and a fresh Verifier that never saw the
-implementation proves every check. A changed screen is opened with Playwright before it is done.
+With `/tlc-spec-lean I want X`, the agent reads the code, asks only what is your decision, writes `.specs/features/<feature>/plan.md` and stops until you approve it. Each criterion becomes a check with the test that settles it; the agent builds, and a fresh Verifier that never saw the implementation proves every check. A changed screen is opened with Playwright before it is done.
 
 ### Adding an MCP server
 
@@ -168,8 +158,7 @@ implementation proves every check. A changed screen is opened with Playwright be
 | `plantuml` | rendering PlantUML; the diagram text goes to `PLANTUML_SERVER_URL`, the public `plantuml.com` if unset |
 | `mermaid` | rendering Mermaid locally |
 
-The command merges the entry into the project's `.mcp.json` and enables it, with credentials only
-as `${VARIABLE}` placeholders. Restart Claude Code and approve the server. See [docs/mcp.md](docs/mcp.md).
+The command merges the entry into the project's `.mcp.json` and enables it, with credentials only as `${VARIABLE}` placeholders. Restart Claude Code and approve the server. See [docs/mcp.md](docs/mcp.md).
 
 ### Commands
 
@@ -186,9 +175,14 @@ as `${VARIABLE}` placeholders. Restart Claude Code and approve the server. See [
 
 `setup`, `init`, `mcp` and `update` accept `-WhatIf`, and a mistyped name gets the closest suggestion. `TAZUNA_PLAIN=1` forces ASCII output and `NO_COLOR` removes colour.
 
+<p align="center"><img src="docs/assets/divider.svg" alt="Ornamental divider in gold, lit from the left" width="480"></p>
+
 ## How it works
 
+> *The seal lights only for what was proven.*
+
 ```mermaid
+%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#2f2530', 'primaryTextColor': '#e2d6bb', 'primaryBorderColor': '#a5752a', 'lineColor': '#bd2e37', 'secondaryColor': '#7f1721', 'tertiaryColor': '#3a2215', 'clusterBkg': '#3a2215', 'clusterBorder': '#a5752a', 'edgeLabelBackground': '#3e0c13', 'fontFamily': 'Georgia, serif'}}}%%
 classDiagram
     direction LR
     namespace this_repository {
@@ -221,6 +215,7 @@ classDiagram
 What holds for every session lives in `~/.claude`; what belongs to the team lives in the project, in version control.
 
 ```mermaid
+%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#2f2530', 'primaryTextColor': '#e2d6bb', 'primaryBorderColor': '#a5752a', 'lineColor': '#bd2e37', 'actorBkg': '#2f2530', 'actorBorder': '#a5752a', 'actorTextColor': '#e2d6bb', 'signalColor': '#bd2e37', 'signalTextColor': '#bd2e37', 'labelBoxBkgColor': '#3e0c13', 'labelBoxBorderColor': '#a5752a', 'labelTextColor': '#e2d6bb', 'loopTextColor': '#bd2e37', 'fontFamily': 'Georgia, serif'}}}%%
 sequenceDiagram
     participant A as Agent
     participant G as Stop gate
@@ -237,15 +232,13 @@ sequenceDiagram
     end
 ```
 
-<p align="center">
-<img src="docs/assets/tazuna/expr-success.svg" alt="Tameshi with the crest seal lit: verification passed" width="128">
-<img src="docs/assets/tazuna/expr-error.svg" alt="Tameshi with the crest seal split: verification failed" width="128">
-</p>
+<p align="center"><img src="docs/assets/tazuna/expr-success.svg" alt="Frenatus with the seal on its chanfron lit: verification passed" width="128"> <img src="docs/assets/tazuna/expr-error.svg" alt="Frenatus with the seal on its chanfron cracked: verification failed" width="128"></p>
 
-The gate compares a fingerprint of the code with the last passing run, blocks once per turn, and
-fails open without a `verify.ps1` or on its own error. A run with `-SkipTests` does not count.
+The gate compares a fingerprint of the code with the last passing run, blocks once per turn, and fails open without a `verify.ps1` or on its own error. A run with `-SkipTests` does not count.
 
 ## Safety
+
+> *What is sacred is guarded, not trusted.*
 
 | Protection | Enforced by |
 |---|---|
@@ -258,6 +251,8 @@ fails open without a `verify.ps1` or on its own error. A run with `-SkipTests` d
 
 ## Troubleshooting
 
+> *Confess the symptom; the remedy follows.*
+
 | Symptom | What to do |
 |---|---|
 | `tazuna` is not recognised | open a new shell, or run `& "$HOME\tazuna\bin\tazuna.cmd" setup` |
@@ -269,11 +264,17 @@ fails open without a `verify.ps1` or on its own error. A run with `-SkipTests` d
 | `.tlc/` shows up as untracked | `tazuna init` adds `**/.tlc/harness/state/` to `.gitignore` |
 | Everything looks wrong | `claude --safe-mode` starts without any customisation |
 
+<p align="center"><img src="docs/assets/divider.svg" alt="Ornamental divider in gold, lit from the left" width="480"></p>
+
 ## Contributing
+
+> *The order welcomes every pilgrim who brings proof.*
 
 Issues and pull requests are welcome. The rules are in [AGENTS.md](AGENTS.md): after any change `tazuna test` has to print `VERIFICATION PASSED`, and the target is Windows PowerShell 5.1. Changes are listed in [CHANGELOG.md](CHANGELOG.md).
 
 ## License
+
+> *Each relic keeps the covenant it was given.*
 
 Tazuna's own code is released under the MIT License, see [LICENSE](LICENSE). What it installs keeps its own licence:
 
@@ -286,14 +287,11 @@ Tazuna's own code is released under the MIT License, see [LICENSE](LICENSE). Wha
 
 ## Acknowledgments
 
+> *Honour to those who forged the reins.*
+
 - The workflow, the skills and the toolkit come from the [Tech Leads Club](https://github.com/tech-leads-club).
 - The ideas behind the loop come from Waldemar Neto's video, [https://www.youtube.com/watch?v=yKLedmyUDMA](https://www.youtube.com/watch?v=yKLedmyUDMA).
 - `humanizer` 3.0.0 comes from [akitaonrails/my-skills](https://github.com/akitaonrails/my-skills/tree/master/humanizer).
-- Tameshi is the original mascot of Tazuna, drawn for this repository ([docs/mascot.md](docs/mascot.md)); the layout follows [Best-README-Template](https://github.com/othneildrew/Best-README-Template).
+- Frenatus is the original mascot of Tazuna, drawn for this repository in tenebrist pixel art ([docs/mascot.md](docs/mascot.md)); the layout follows [Best-README-Template](https://github.com/othneildrew/Best-README-Template).
 
-<div align="center">
-
-<img src="docs/assets/tazuna/expr-success.svg" alt="Tameshi with the crest seal lit, the sign of a passed verification" width="128"><br>
-<sub>Plan, Checks, Build, Verify, Review. The rest the model reads from your repository.</sub>
-
-</div>
+<p align="center"><img src="docs/assets/divider.svg" alt="Ornamental divider in gold, lit from the left" width="480"><br><img src="docs/assets/tazuna/expr-success.svg" alt="Frenatus with the seal on its chanfron lit, the sign of a passed verification" width="128"><br><sub>Plan, Checks, Build, Verify, Review. The rest the model reads from your repository.</sub></p>

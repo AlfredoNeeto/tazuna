@@ -166,95 +166,146 @@ function Get-SpriteSvg {
     $w = $Sprite.Width
     $h = $Sprite.Height
 
-    return ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {0} {1}" width="{0}" height="{1}" shape-rendering="crispEdges" role="img" aria-label="Tameshi, the Tazuna mascot: {2}">' -f $w, $h, $Sprite.Name) + "`n" +
+    return ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {0} {1}" width="{0}" height="{1}" shape-rendering="crispEdges" role="img" aria-label="Frenatus, the Tazuna mascot: {2}">' -f $w, $h, $Sprite.Name) + "`n" +
         ('<g id="{0}">' -f $Sprite.Name) + (Get-SpriteRects -Sprite $Sprite) + '</g>' + "`n</svg>`n"
+}
+
+# The hero bleeds off the lower-right corner of both images, so its reins leave the picture on
+# the right; the lead line continues its cavesson (row 44) leftwards, ending where the chin
+# begins (column 13). Both are measured on the 64x64 master; docs/mascot.md fixes them.
+$leadRow = 44
+$leadEnd = 13
+
+function Get-LeadSprite {
+    # The lead line in hero pixels: leather over its shade over ink, like the reins, with a gold
+    # ferrule three pixels wide centred on each of the given columns.
+    param([int]$Width, [int[]]$Ferrules)
+
+    $top = New-Object System.Text.StringBuilder
+    $shade = New-Object System.Text.StringBuilder
+    for ($x = 0; $x -lt $Width; $x++) {
+        $ferrule = @($Ferrules | Where-Object { [Math]::Abs($_ - $x) -le 1 }).Count -gt 0
+        if ($ferrule) { [void]$top.Append("O"); [void]$shade.Append("o") }
+        else { [void]$top.Append("L"); [void]$shade.Append("l") }
+    }
+    $colours = New-Object System.Collections.Hashtable ([System.StringComparer]::Ordinal)
+    $colours["L"] = "#6c4326"
+    $colours["l"] = "#3a2215"
+    $colours["O"] = "#d9a948"
+    $colours["o"] = "#a5752a"
+    $colours["K"] = "#0c0809"
+    return [PSCustomObject]@{ Name = "lead"; Colours = $colours; Rows = @($top.ToString(), $shade.ToString(), ("K" * $Width)); Width = $Width; Height = 3 }
 }
 
 function Get-BannerSvg {
     param($Hero, $Lit)
 
-    $tagline = "A verification gate for Claude Code that works in any stack."
+    $tagline = "A verification gate for Claude Code and Cursor that works in any stack."
 
-    $sparkles = @(@(336, 42), @(924, 34), @(906, 250)) | ForEach-Object {
-        '<g fill="#d97757"><rect x="{0}" y="{1}" width="4" height="20"/><rect x="{2}" y="{3}" width="20" height="4"/></g>' -f $_[0], $_[1], ($_[0] - 8), ($_[1] + 8)
-    }
+    $heroLeft = 960 - 64 * 3.5
+    $heroTop = 300 - 64 * 3.5
+    $leadLeft = 64
+    $leadWidth = [int](($heroLeft + $leadEnd * 3.5 - $leadLeft) / 3.5)
+    $leadTop = $heroTop + $leadRow * 3.5
 
-    $steps = @(@("Plan", 386), @("Checks", 482), @("Build", 584), @("Verify", 686), @("Review", 794))
+    # why: each step sits over a ferrule of the lead, so its x is that ferrule's centre, in whole pixels.
+    $steps = @(@("Plan", 19), @("Checks", 58), @("Build", 97), @("Verify", 136), @("Review", 175))
+    $lead = Get-LeadSprite -Width $leadWidth -Ferrules @($steps | ForEach-Object { $_[1] })
     $row = foreach ($step in $steps) {
-        $text = '<text x="{0}" y="238" text-anchor="middle" font-family="ui-monospace, ''Cascadia Code'', Consolas, monospace" font-size="20" fill="#d97757">{1}</text>' -f $step[1], $step[0]
-        if ($step[0] -eq "Verify") { '<g id="step-verify"><rect id="verify-lit" x="644" y="214" width="84" height="34" rx="17" fill="#e3b25b" fill-opacity="0.18" stroke="#e3b25b" stroke-width="2"/>' + $text + '</g>' }
+        $x = [int]($leadLeft + ($step[1] + 0.5) * 3.5)
+        $text = '<text x="{0}" y="218" text-anchor="middle" font-family="ui-monospace, ''Cascadia Code'', Consolas, monospace" font-size="20" fill="#e25a5c">{1}</text>' -f $x, $step[0]
+        if ($step[0] -eq "Verify") { ('<g id="step-verify"><rect id="verify-lit" x="{0}" y="194" width="84" height="34" rx="17" fill="#d9a948" fill-opacity="0.18" stroke="#d9a948" stroke-width="2"/>' -f ($x - 42)) + $text + '</g>' }
         else { $text }
-    }
-    $arrows = @(430, 532, 634, 740) | ForEach-Object {
-        '<path d="M{0} 226l6 6-6 6" fill="none" stroke="#8a877d" stroke-width="2"/>' -f $_
     }
 
     # why: CSS keyframes rather than SMIL, because only CSS answers prefers-reduced-motion; the lit frames rest hidden.
     $style = @(
         '<style>',
-        '#tameshi-lit, #verify-lit { opacity: 0; animation: lit 6s steps(1, end) infinite; }',
-        '#tameshi { animation: rest 6s steps(1, end) infinite; }',
+        '#frenatus-lit, #verify-lit { opacity: 0; animation: lit 6s steps(1, end) infinite; }',
+        '#frenatus { animation: rest 6s steps(1, end) infinite; }',
         '@keyframes lit { 0%, 66.66% { opacity: 0; } 66.67%, 100% { opacity: 1; } }',
         '@keyframes rest { 0%, 66.66% { opacity: 1; } 66.67%, 100% { opacity: 0; } }',
-        '@media (prefers-reduced-motion: reduce) { #tameshi, #tameshi-lit, #verify-lit { animation: none; } }',
+        '@media (prefers-reduced-motion: reduce) { #frenatus, #frenatus-lit, #verify-lit { animation: none; } }',
         '</style>'
     ) -join "`n"
 
-    # invariant: one ink card serves GitHub's light and dark themes; the sprite's rim light is drawn for the dark.
+    $place = 'transform="translate({0} {1}) scale(3.5)" shape-rendering="crispEdges"' -f $heroLeft, $heroTop
+
+    # invariant: one dark card serves GitHub's light and dark themes; the frame is drawn again over the horse it crops.
     return @(
-        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 300" width="960" height="300" role="img" aria-label="Tazuna: Tameshi, the mascot, beside the project title; the seal on its crest lights up with the Verify step">',
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 300" width="960" height="300" role="img" aria-label="Tazuna: Frenatus, the mascot, a barded horse whose lead line runs under the five steps; the seal on its chanfron lights up with the Verify step">',
         $style,
-        '<rect x="1" y="1" width="958" height="298" rx="18" fill="#141413" stroke="#3d3929" stroke-width="2"/>',
-        ($sparkles -join ""),
-        ('<g id="tameshi" transform="translate(64 38) scale(3.5)" shape-rendering="crispEdges">' + (Get-SpriteRects -Sprite $Hero) + '</g>'),
-        ('<g id="tameshi-lit" transform="translate(64 38) scale(3.5)" shape-rendering="crispEdges">' + (Get-SpriteRects -Sprite $Lit) + '</g>'),
-        '<text x="360" y="130" font-family="Georgia, ''Times New Roman'', serif" font-size="64" fill="#faf9f5">Tazuna</text>',
-        ('<text x="362" y="176" font-family="ui-sans-serif, ''Segoe UI'', system-ui, sans-serif" font-size="18" fill="#b0aea5">{0}</text>' -f $tagline),
+        '<rect x="1" y="1" width="958" height="298" rx="18" fill="#1c1419" stroke="#6a4716" stroke-width="2"/>',
+        '<clipPath id="card"><rect x="1" y="1" width="958" height="298" rx="18"/></clipPath>',
+        '<text x="64" y="118" font-family="Georgia, ''Times New Roman'', serif" font-size="64" fill="#f9e7a8">Tazuna</text>',
+        ('<text x="66" y="160" font-family="ui-sans-serif, ''Segoe UI'', system-ui, sans-serif" font-size="18" fill="#e2d6bb">{0}</text>' -f $tagline),
+        (('<g id="lead" transform="translate({0} {1}) scale(3.5)" shape-rendering="crispEdges">' -f $leadLeft, $leadTop) + (Get-SpriteRects -Sprite $lead) + '</g>'),
         ($row -join "`n"),
-        ($arrows -join ""),
+        '<g clip-path="url(#card)">',
+        ('<g id="frenatus" ' + $place + '>' + (Get-SpriteRects -Sprite $Hero) + '</g>'),
+        ('<g id="frenatus-lit" ' + $place + '>' + (Get-SpriteRects -Sprite $Lit) + '</g>'),
+        '</g>',
+        '<rect x="1" y="1" width="958" height="298" rx="18" fill="none" stroke="#6a4716" stroke-width="2"/>',
         '</svg>'
     ) -join "`n"
 }
 
 # ---------------------------------------------------------------------------
-# PNG: the social preview, 1280x640 on Claude ink.
+# PNG: the social preview, 1280x640, the banner's card at twice the scale.
 # ---------------------------------------------------------------------------
+function Add-SpritePixels {
+    param($Graphics, $Sprite, [int]$Left, [int]$Top, [int]$Scale)
+
+    $brushes = @{}
+    try {
+        for ($y = 0; $y -lt $Sprite.Height; $y++) {
+            $row = $Sprite.Rows[$y]
+            for ($x = 0; $x -lt $Sprite.Width; $x++) {
+                $ch = [string]$row[$x]
+                if ($ch -eq ".") { continue }
+                $hex = $Sprite.Colours[$ch]
+                if (-not $brushes.ContainsKey($hex)) { $brushes[$hex] = New-Object System.Drawing.SolidBrush ([System.Drawing.ColorTranslator]::FromHtml($hex)) }
+                $Graphics.FillRectangle($brushes[$hex], $Left + $x * $Scale, $Top + $y * $Scale, $Scale, $Scale)
+            }
+        }
+    }
+    finally {
+        foreach ($brush in $brushes.Values) { $brush.Dispose() }
+    }
+}
+
 function Get-SocialPreviewBytes {
     param($Hero)
 
     Add-Type -AssemblyName System.Drawing
 
     $arrow = [string][char]0x2192
-    $tagline = "A verification gate for Claude Code that works in any stack."
+    $tagline = "A verification gate for Claude Code and Cursor that works in any stack."
     $bitmap = New-Object System.Drawing.Bitmap 1280, 640
     $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
 
     try {
-        $graphics.Clear([System.Drawing.ColorTranslator]::FromHtml("#141413"))
+        $graphics.Clear([System.Drawing.ColorTranslator]::FromHtml("#1c1419"))
         $graphics.TextRenderingHint = [System.Drawing.Text.TextRenderingHint]::AntiAliasGridFit
 
         $scale = 7
-        $left = 96
-        $top = 96
+        $left = 1280 - $Hero.Width * $scale
+        $top = 640 - $Hero.Height * $scale
+        $leadWidth = [int][Math]::Floor(($left + $leadEnd * $scale - 96) / $scale)
+        $leadLeft = $left + ($leadEnd - $leadWidth) * $scale
 
-        for ($y = 0; $y -lt $Hero.Height; $y++) {
-            $row = $Hero.Rows[$y]
-            for ($x = 0; $x -lt $Hero.Width; $x++) {
-                $ch = $row[$x]
-                if ($ch -eq ".") { continue }
-                $brush = New-Object System.Drawing.SolidBrush ([System.Drawing.ColorTranslator]::FromHtml($Hero.Colours[[string]$ch]))
-                $graphics.FillRectangle($brush, $left + $x * $scale, $top + $y * $scale, $scale, $scale)
-                $brush.Dispose()
-            }
-        }
+        Add-SpritePixels -Graphics $graphics -Sprite (Get-LeadSprite -Width $leadWidth -Ferrules @()) -Left $leadLeft -Top ($top + $leadRow * $scale) -Scale $scale
+        Add-SpritePixels -Graphics $graphics -Sprite $Hero -Left $left -Top $top -Scale $scale
 
-        $cream = New-Object System.Drawing.SolidBrush ([System.Drawing.ColorTranslator]::FromHtml("#faf9f5"))
-        $terracotta = New-Object System.Drawing.SolidBrush ([System.Drawing.ColorTranslator]::FromHtml("#d97757"))
-        $grey = New-Object System.Drawing.SolidBrush ([System.Drawing.ColorTranslator]::FromHtml("#b0aea5"))
+        $gilt = New-Object System.Drawing.SolidBrush ([System.Drawing.ColorTranslator]::FromHtml("#f9e7a8"))
+        $crimson = New-Object System.Drawing.SolidBrush ([System.Drawing.ColorTranslator]::FromHtml("#e25a5c"))
+        $bone = New-Object System.Drawing.SolidBrush ([System.Drawing.ColorTranslator]::FromHtml("#e2d6bb"))
+        $frame = New-Object System.Drawing.Pen ([System.Drawing.ColorTranslator]::FromHtml("#6a4716")), 4
 
-        $graphics.DrawString("Tazuna", (New-Object System.Drawing.Font("Georgia", 96)), $cream, 600, 170)
-        $graphics.DrawString("plan $arrow checks $arrow build $arrow verify $arrow review", (New-Object System.Drawing.Font("Consolas", 20)), $terracotta, 612, 330)
-        $graphics.DrawString($tagline, (New-Object System.Drawing.Font("Segoe UI", 22)), $grey, (New-Object System.Drawing.RectangleF(612, 390, 600, 120)))
+        $graphics.DrawString("Tazuna", (New-Object System.Drawing.Font("Georgia", 96)), $gilt, 80, 96)
+        $graphics.DrawString($tagline, (New-Object System.Drawing.Font("Segoe UI", 22)), $bone, (New-Object System.Drawing.RectangleF(100, 270, 660, 120)))
+        $graphics.DrawString("plan $arrow checks $arrow build $arrow verify $arrow review", (New-Object System.Drawing.Font("Consolas", 20)), $crimson, 100, 440)
+        $graphics.DrawRectangle($frame, 2, 2, 1275, 635)
 
         $stream = New-Object System.IO.MemoryStream
         $bitmap.Save($stream, [System.Drawing.Imaging.ImageFormat]::Png)

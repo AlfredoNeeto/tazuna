@@ -1,47 +1,49 @@
-K #141413
-D #3d3929
-n #5a5851
-G #8a877d
-g #b0aea5
-c #e8e6dc
-C #faf9f5
-T #d97757
-r #c96442
-t #c15f3c
-R #87422a
-A #e3b25b
-a #b4833a
-m #755526
+K #0c0809
+k #1c1419
+h #2f2530
+H #4b3f4e
+j #7d7082
+r #3e0c13
+R #7f1721
+c #bd2e37
+p #e25a5c
+l #3a2215
+L #6c4326
+y #6a4716
+o #a5752a
+O #d9a948
+W #f9e7a8
+b #e2d6bb
 ---
-.........KAaK.KKKK.KaAK.........
-........KCaK.KaAaaK.KaCK........
-.......KCaK.KAAAAAaK.KaCK.......
-.......KCaK.KAAKKAaK.KaCK.......
-.......KCaKKaAAKKmaaKKaCK.......
-........KAAaKAAAmAaKaAAK........
-.........KAAaaaAaaaaAAK.........
-..........KAaaaaaaaaAK..........
-...........GKKKKKKKKK...........
-................................
-............GGGGnnnK............
-..........GKDDDDDDDDKK..........
-.........KDGDnDDDDDDDDK.........
-........KDGDDnDDDDDDDDDK........
-.....KKKKGDDDnDDDDDDDDDKKKK.....
-....KAKKKKKKKKKKKKKKKKKKKKAK....
-....KKACCCCAAAAAAAAAAAaaaaKK....
-....KKaaaaaaaaaaaaaaaammmmKK....
-.....KKKKKKggggggggggKKKKKK.....
-.....KKRRRRcKKccccKKgRRRRKK.....
-.....KTTTTTKKKKKKKKKKTrrrrK.....
-.....KttttKGDDDDDDDDDKRRRRKK....
-..KKKKKRRRRKDnDDDDDDKRRRRKGGKK..
-.KAAAAAKKKKnKKKKKKKKDKKKKnnnKaK.
-.KaaaaaaaKGDDDDDDDDKKKKTTKnnKmK.
-.KTTcTTTTKGDKKDDKKKTTTTttKnnKrK.
-.KtttttttKGDKKKKTTTttttKKKKKRRK.
-KRRRKKKKRKKKKTTTtttKKKKRRRRRRRRK
-KTTKGGGKKTTTTtttKKKDDDKTTTTgrrrK
-KttKnnKTTttttKKKDDDDDDKttttRRRRK
-KRRKnnKttKKKKDDDDDDDDDKRRRRRRRRK
-KTTKnnnKKKGDDDDDDDDDDDKTTTTgrrrK
+KOyyK..KoKKKKK.K.KoKK.KKKKK.....
+.KOyyK..KKyyOOKjK.KKWKcppccK....
+..KOyyKKyOOKKKKjcKyKOKRccRpcK...
+...KOKyOOKK..KjkcKOKyKKrRrRccK..
+....KyOKK....KjkhcKOOyKKKrKRcK..
+.KK.KOK......KHkhhKoyyKhKKKrcK..
+KooKyOK.....KKKKKKKKKKKKoK.KKK..
+.KKKOK......KWOOOOyKcOcRyWK.....
+..KyOK......KWOoyOyKOWWoyOOK....
+..KyK......KWOoWOyKKKKKKlooOK...
+KKKOK......KWOoyyKhbkKhhKyoooK..
+yyKOK.....KWOoyOyKHjjHhhhKyoyWK.
+KKKOK.....KWOoyOyKhhhhhLlhKyyOOK
+..KyK....KWOoyOyKHhkkkLlhhhKlooO
+..KyOK..KKKKoyOyKHkjjjLlKhhjKyoo
+.KKKOK.KWOOoKOyKHjjjHOyrrKhHkKyo
+KooKyOKKOrkyKOyKHjHHLlhhrhKhHkKy
+.KK.KOKKorryKyKHjjHHLlhhhrKhjkhK
+....KyOKyyylKyKHjHHLlhhhhrKhHkhh
+.....KyKKKKKyKHkjHLlhhhhkrKkhhOL
+......KWOoyyKHhkjjOyhhhkkrKkLLKK
+......KWOoyKHhhhkLlhhhkkrKLLKKhh
+.....KWOoyKHhhhhLlhhhkkrLOKKhhhh
+.....KyKHjHhhhhhLlhhkLLLKK.Khhhh
+....KjHHhhhhhhhLlhKLOKKK...KhhLL
+....KLLOLLLLLhOyKLLKK....KKLLOKK
+....KkKhhhLlhLlOLKK...KKKLLKKKoW
+....KHkhhKKKlLLKK..KKKLLOKKhKoWr
+.....KKKKKOyKKK..KKOLLKKK.KKoWrc
+......KHHKoKK.KKKLLKKK...Koorrcc
+.......KhKyKKKOLLKK....KKoorRRcc
+.......KKKOKLLKKK.....KWoorrRRcc

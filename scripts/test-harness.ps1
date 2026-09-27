@@ -3496,10 +3496,10 @@ try {
         return $true
     }
 
-    # The mascot, Tameshi. The geometry constants are the ones the consistency
-    # checklist in docs/mascot.md fixes: crest rows, dent block, rein window,
-    # face window. They describe the drawing, so a redrawn master changes them here
-    # and in docs/mascot.md together.
+    # The mascot, Frenatus. The geometry constants are the ones the consistency
+    # checklist in docs/mascot.md fixes: rein lines, seal glass, halo window,
+    # eye. They describe the drawing, so a redrawn master changes them here and in
+    # docs/mascot.md together.
 
     $mascotSource = Join-Path $repoRoot "docs\assets\tazuna\src"
     $mascotAssets = Join-Path $repoRoot "docs\assets\tazuna"
@@ -3508,7 +3508,7 @@ try {
     $mascotKept = @($mascotNames + @("icon-32"))
     $mascotDeleted = @("view-side", "view-back", "view-34", "expr-neutral", "expr-happy", "expr-thinking", "expr-focused",
         "expr-confused", "expr-surprised", "pose-standing", "pose-coding", "pose-inspecting", "pose-planning", "pose-debugging", "pose-celebrating")
-    $mascotBase = @("#d97757", "#c15f3c", "#c96442", "#3d3929", "#e8e6dc", "#b0aea5", "#faf9f5", "#141413", "#8a877d", "#b4833a", "#e3b25b")
+    $mascotInk = "#0c0809"
 
     function Read-SpriteGrid {
         # A text sprite: palette lines, "---", then rows. Read here on its own so the
@@ -3556,22 +3556,61 @@ try {
         return ($a + 0.05) / ($b + 0.05)
     }
 
-    function Get-HueAndLightness {
-        param([string]$Hex)
-        $r = [Convert]::ToInt32($Hex.Substring(1, 2), 16) / 255.0
-        $g = [Convert]::ToInt32($Hex.Substring(3, 2), 16) / 255.0
-        $b = [Convert]::ToInt32($Hex.Substring(5, 2), 16) / 255.0
-        $max = [Math]::Max($r, [Math]::Max($g, $b))
-        $min = [Math]::Min($r, [Math]::Min($g, $b))
-        $delta = $max - $min
-        $hue = 0.0
-        if ($delta -gt 0) {
-            if ($max -eq $r) { $hue = 60.0 * ((($g - $b) / $delta) % 6) }
-            elseif ($max -eq $g) { $hue = 60.0 * ((($b - $r) / $delta) + 2) }
-            else { $hue = 60.0 * ((($r - $g) / $delta) + 4) }
-            if ($hue -lt 0) { $hue += 360 }
+    function New-TestGrid {
+        # A sprite grid built in memory, for the planted negative controls.
+        param([hashtable]$Colours, [string[]]$Rows)
+        return [PSCustomObject]@{ Colours = $Colours; Rows = $Rows; Width = $Rows[0].Length; Height = $Rows.Count }
+    }
+
+    function Find-OpenEdge {
+        # "x,y" of each pixel that is neither ink nor transparent and faces a transparent pixel.
+        param($Grid)
+        $hits = @()
+        for ($y = 0; $y -lt $Grid.Height; $y++) {
+            for ($x = 0; $x -lt $Grid.Width; $x++) {
+                $hex = Get-SpriteHex -Grid $Grid -X $x -Y $y
+                if (($null -eq $hex) -or ($hex -eq $mascotInk)) { continue }
+                foreach ($step in @(@(1, 0), @(-1, 0), @(0, 1), @(0, -1))) {
+                    $nx = $x + $step[0]
+                    $ny = $y + $step[1]
+                    if (($nx -lt 0) -or ($ny -lt 0) -or ($nx -ge $Grid.Width) -or ($ny -ge $Grid.Height)) { continue }
+                    if ([string]$Grid.Rows[$ny][$nx] -eq ".") { $hits += "$x,$y"; break }
+                }
+            }
         }
-        return [PSCustomObject]@{ Hue = $hue; Lightness = ($max + $min) / 2 }
+        return $hits
+    }
+
+    function Find-ReinBreak {
+        # "x,y" of the first pixel where the straight line from (X0,Y0) to (X1,Y1) is not rein
+        # leather or a gold keeper - or, with -Shade, has no leather shade under it; $null if unbroken.
+        param($Grid, [int]$X0, [int]$Y0, [int]$X1, [int]$Y1, [switch]$Shade)
+        for ($x = $X0; $x -le $X1; $x++) {
+            $y = [int][Math]::Round($Y0 + ($Y1 - $Y0) * ($x - $X0) / ($X1 - $X0))
+            if (@("#6c4326", "#d9a948") -notcontains (Get-SpriteHex -Grid $Grid -X $x -Y $y)) { return "$x,$y" }
+            if ($Shade -and ((Get-SpriteHex -Grid $Grid -X $x -Y ($y + 1)) -ne "#3a2215")) { return "$x,$($y + 1)" }
+        }
+        return $null
+    }
+
+    function Get-SealGlass {
+        # The colours of the seal's glass: a Size x Size block from (X,Y).
+        param($Grid, [int]$X, [int]$Y, [int]$Size)
+        $glass = @()
+        for ($dy = 0; $dy -lt $Size; $dy++) {
+            for ($dx = 0; $dx -lt $Size; $dx++) { $glass += (Get-SpriteHex -Grid $Grid -X ($X + $dx) -Y ($Y + $dy)) }
+        }
+        return $glass
+    }
+
+    function Get-FigureCount {
+        # Figure pixels in columns 0..Width-1 and rows 0..Height-1.
+        param($Grid, [int]$Width, [int]$Height)
+        $count = 0
+        for ($y = 0; $y -lt $Height; $y++) {
+            for ($x = 0; $x -lt $Width; $x++) { if ([string]$Grid.Rows[$y][$x] -ne ".") { $count++ } }
+        }
+        return $count
     }
 
     function Get-BibleSection {
@@ -3646,7 +3685,7 @@ try {
     Test-Case -Name "M3 the renderer rejects a colour outside the palette, names the file and the colour, and writes nothing" -Check {
         $root = Copy-MascotScratch
         Remove-RenderedOutput -Root $root
-        $grid = @("Z #ff0000", "K #141413", "---") + @(1..64 | ForEach-Object { "Z" * 64 })
+        $grid = @("Z #ff0000", "K #0c0809", "---") + @(1..64 | ForEach-Object { "Z" * 64 })
         Set-Content -LiteralPath (Join-Path $root "docs\assets\tazuna\src\bad-colour.txt") -Value ($grid -join "`n")
         $run = Invoke-MascotRenderer -Root $root
         if ($run.Code -eq 0) { return "the renderer exited 0" }
@@ -3657,22 +3696,11 @@ try {
         return $true
     }
 
-    Test-Case -Name "M4 the bible's palette has 12 to 16 colours, the three required ones, and only base colours or darker shades of their hues" -Check {
+    Test-Case -Name "M4 the bible's palette has 12 to 16 colours, among them the ink, the seal's garnet, the gold and the rein leather" -Check {
         $palette = @(Get-MascotPalette)
         if (($palette.Count -lt 12) -or ($palette.Count -gt 16)) { return "$($palette.Count) colours" }
-        foreach ($required in @("#d97757", "#c15f3c", "#141413")) {
+        foreach ($required in @($mascotInk, "#3e0c13", "#d9a948", "#6c4326")) {
             if ($palette -notcontains $required) { return "$required is not in the palette" }
-        }
-        foreach ($colour in $palette) {
-            if ($mascotBase -contains $colour) { continue }
-            $own = Get-HueAndLightness -Hex $colour
-            $parent = $mascotBase | Where-Object {
-                $base = Get-HueAndLightness -Hex $_
-                $distance = [Math]::Abs($own.Hue - $base.Hue)
-                if ($distance -gt 180) { $distance = 360 - $distance }
-                ($distance -le 8) -and ($own.Lightness -lt $base.Lightness)
-            } | Select-Object -First 1
-            if (-not $parent) { return "$colour is neither a base colour nor a darker shade of one (hue $([Math]::Round($own.Hue)))" }
         }
         return $true
     }
@@ -3687,80 +3715,81 @@ try {
         return $true
     }
 
-    Test-Case -Name "M6 the crest is separated from the helmet by a transparent pixel in every column of the hero and the icon" -Check {
-        foreach ($entry in @(@("view-front", 13), @("icon-32", 8))) {
-            $grid = Get-MascotGrid -Name $entry[0]
-            $crestBottom = $entry[1]
-            for ($x = 0; $x -lt $grid.Width; $x++) {
-                $last = -1
-                $below = $false
-                for ($y = 0; $y -lt $grid.Height; $y++) {
-                    if ([string]$grid.Rows[$y][$x] -eq ".") { continue }
-                    if ($y -le $crestBottom) { $last = $y } else { $below = $true }
-                }
-                if (($last -ge 0) -and $below -and ([string]$grid.Rows[$last + 1][$x] -ne ".")) { return "$($entry[0]): column $x has no gap under its crest pixel at row $last" }
-            }
+    Test-Case -Name "M6 ink closes every sprite's silhouette: no other colour faces transparency" -Check {
+        foreach ($name in $mascotKept) {
+            $open = @(Find-OpenEdge -Grid (Get-MascotGrid -Name $name))
+            if ($open.Count -gt 0) { return "$name`: $($open.Count) pixel(s) face transparency without ink, the first at $($open[0])" }
         }
+        # why: a scan that never reports would pass here too; a gold pixel beside a transparent one must be reported.
+        $planted = @(Find-OpenEdge -Grid (New-TestGrid -Colours @{ "K" = $mascotInk; "O" = "#d9a948" } -Rows @("KKK", "KO.", "KKK")))
+        if (($planted -join ";") -ne "1,1") { return ("the planted grid was reported as: " + ($planted -join ";")) }
         return $true
     }
 
-    Test-Case -Name "M7 the rein is at least 3 pixels thick across the hero's chest and 2 across the icon's" -Check {
-        foreach ($entry in @(@("view-front", 20, 40, 43, 52, 3), @("icon-32", 8, 22, 23, 30, 2))) {
-            $grid = Get-MascotGrid -Name $entry[0]
-            for ($x = $entry[1]; $x -le $entry[3]; $x++) {
-                $run = 0
-                $best = 0
-                for ($y = $entry[2]; $y -le $entry[4]; $y++) {
-                    $hex = Get-SpriteHex -Grid $grid -X $x -Y $y
-                    if (($hex -eq "#d97757") -or ($hex -eq "#c15f3c")) { $run++ } else { $run = 0 }
-                    if ($run -gt $best) { $best = $run }
-                }
-                if ($best -lt $entry[5]) { return "$($entry[0]): column $x has a rein run of $best, expected $($entry[5])" }
-            }
-        }
-        return $true
-    }
-
-    Test-Case -Name "M8 the proof dent at the seal's centre is dark in the hero and the icon" -Check {
-        foreach ($entry in @(@("view-front", 31, 7), @("icon-32", 15, 3))) {
-            $grid = Get-MascotGrid -Name $entry[0]
-            foreach ($offset in @(@(0, 0), @(1, 0), @(0, 1), @(1, 1))) {
-                $hex = Get-SpriteHex -Grid $grid -X ($entry[1] + $offset[0]) -Y ($entry[2] + $offset[1])
-                if (($hex -ne "#141413") -and ($hex -ne "#3d3929")) { return "$($entry[0]): dent pixel ($($entry[1] + $offset[0]),$($entry[2] + $offset[1])) is $hex" }
-            }
-        }
-        return $true
-    }
-
-    Test-Case -Name "M9 every figure row of the hero and the icon has a pixel at 3:1 contrast on GitHub dark" -Check {
-        foreach ($name in @("view-front", "icon-32")) {
+    Test-Case -Name "M7 two straight reins run unbroken from the bit to the right edge of every sprite" -Check {
+        foreach ($name in $mascotNames) {
             $grid = Get-MascotGrid -Name $name
-            for ($y = 0; $y -lt $grid.Height; $y++) {
-                $figure = $false
-                $readable = $false
-                for ($x = 0; $x -lt $grid.Width; $x++) {
-                    $hex = Get-SpriteHex -Grid $grid -X $x -Y $y
-                    if ($null -eq $hex) { continue }
-                    $figure = $true
-                    if ((Get-ContrastRatio -Hex $hex -Against "#0d1117") -ge 3.0) { $readable = $true; break }
+            foreach ($rein in @(@(24, 47, 63, 35), @(24, 55, 63, 43))) {
+                $break = Find-ReinBreak -Grid $grid -X0 $rein[0] -Y0 $rein[1] -X1 $rein[2] -Y1 $rein[3] -Shade
+                if ($null -ne $break) { return "$name`: the rein from ($($rein[0]),$($rein[1])) breaks at $break" }
+            }
+        }
+        $icon = Get-MascotGrid -Name "icon-32"
+        foreach ($rein in @(@(13, 27, 31, 19), @(12, 31, 31, 24))) {
+            $break = Find-ReinBreak -Grid $icon -X0 $rein[0] -Y0 $rein[1] -X1 $rein[2] -Y1 $rein[3]
+            if ($null -ne $break) { return "icon-32: the rein from ($($rein[0]),$($rein[1])) breaks at $break" }
+        }
+        # why: a scan that never finds a break would pass here too; one cut pixel on the upper rein must be found.
+        $cut = Get-MascotGrid -Name "view-front"
+        $cut.Rows[41] = $cut.Rows[41].Substring(0, 42) + "." + $cut.Rows[41].Substring(43)
+        $found = Find-ReinBreak -Grid $cut -X0 24 -Y0 47 -X1 63 -Y1 35 -Shade
+        if ($found -ne "42,41") { return "the cut rein was reported as: $found" }
+        return $true
+    }
+
+    Test-Case -Name "M8 the seal's glass is dark at rest, bone and gold on pass, and cracked with ink on fail" -Check {
+        foreach ($entry in @(@("view-front", 22, 30, 3), @("icon-32", 9, 16, 2))) {
+            foreach ($hex in (Get-SealGlass -Grid (Get-MascotGrid -Name $entry[0]) -X $entry[1] -Y $entry[2] -Size $entry[3])) {
+                if (@("#3e0c13", "#1c1419") -notcontains $hex) { return "$($entry[0]): the seal's glass holds $hex at rest" }
+            }
+        }
+        foreach ($hex in (Get-SealGlass -Grid (Get-MascotGrid -Name "expr-success") -X 22 -Y 30 -Size 3)) {
+            if (@("#e2d6bb", "#f9e7a8") -notcontains $hex) { return "expr-success: the seal's glass holds $hex, not bone or gold" }
+        }
+        $fissure = @(Get-SealGlass -Grid (Get-MascotGrid -Name "expr-error") -X 22 -Y 30 -Size 3 | Where-Object { $_ -eq $mascotInk })
+        if ($fissure.Count -lt 2) { return "expr-error: the seal's glass holds $($fissure.Count) ink pixel(s), expected a fissure of at least 2" }
+        return $true
+    }
+
+    Test-Case -Name "M9 every figure row of every sprite has a pixel at 3:1 contrast on GitHub dark and on white" -Check {
+        foreach ($name in $mascotKept) {
+            $grid = Get-MascotGrid -Name $name
+            foreach ($ground in @("#0d1117", "#ffffff")) {
+                for ($y = 0; $y -lt $grid.Height; $y++) {
+                    $figure = $false
+                    $readable = $false
+                    for ($x = 0; $x -lt $grid.Width; $x++) {
+                        $hex = Get-SpriteHex -Grid $grid -X $x -Y $y
+                        if ($null -eq $hex) { continue }
+                        $figure = $true
+                        if ((Get-ContrastRatio -Hex $hex -Against $ground) -ge 3.0) { $readable = $true; break }
+                    }
+                    if ($figure -and (-not $readable)) { return "$name`: row $y has no pixel readable on $ground" }
                 }
-                if ($figure -and (-not $readable)) { return "$name`: row $y has no pixel readable on #0d1117" }
             }
         }
         return $true
     }
 
-    Test-Case -Name "M10 the hero shows a pale face under the helmet" -Check {
-        $grid = Get-MascotGrid -Name "view-front"
-        $pale = 0
-        for ($y = 27; $y -le 31; $y++) {
-            for ($x = 24; $x -le 39; $x++) {
-                $hex = Get-SpriteHex -Grid $grid -X $x -Y $y
-                if (($hex -eq "#e8e6dc") -or ($hex -eq "#b0aea5")) { $pale++ }
-            }
-        }
-        if ($pale -ge 8) { return $true }
-        return "$pale pale pixels in the face window, expected at least 8"
+    Test-Case -Name "M10 the resplendor grows on pass and shrinks on fail" -Check {
+        # invariant: columns 0-15, rows 0-33 hold only the halo and its rays, in every state.
+        $count = @{}
+        foreach ($name in $mascotNames) { $count[$name] = Get-FigureCount -Grid (Get-MascotGrid -Name $name) -Width 16 -Height 34 }
+        if ($count["expr-success"] -le $count["view-front"]) { return "the halo holds $($count['expr-success']) pixels on pass and $($count['view-front']) at rest" }
+        if ($count["expr-error"] -ge $count["view-front"]) { return "the halo holds $($count['expr-error']) pixels on fail and $($count['view-front']) at rest" }
+        # why: a count that is always zero or always full would fail above only by luck; a planted grid must count exactly.
+        if ((Get-FigureCount -Grid (New-TestGrid -Colours @{ "O" = "#d9a948" } -Rows @("O..", ".O.", "..O")) -Width 2 -Height 2) -ne 2) { return "the planted grid was miscounted" }
+        return $true
     }
 
     Test-Case -Name "M11 only the 4 sprites the README uses have a source and a rendered svg, and there is no sheet" -Check {
@@ -3809,23 +3838,23 @@ try {
         return $true
     }
 
-    Test-Case -Name "M16 the image-generation prompt names the palette, the grid, Japan and the mood-only rule" -Check {
+    Test-Case -Name "M16 the image-generation prompt names the palette, the grid, the Andalusian horse and the mood-only rule" -Check {
         $prompt = Get-BibleSection -Heading "Image generation prompt"
         if ($null -eq $prompt) { return "no '## Image generation prompt' section" }
         foreach ($colour in @(Get-MascotPalette)) {
             if (-not $prompt.Contains($colour)) { return "the prompt does not name $colour" }
         }
-        foreach ($token in @("64x64", "Japan", "mood only")) {
+        foreach ($token in @("64x64", "Andalusian", "mood only")) {
             if (-not $prompt.Contains($token)) { return "the prompt does not say '$token'" }
         }
         return $true
     }
 
-    Test-Case -Name "M17 the forbidden features name the Penitent One, Wolf and Souls" -Check {
+    Test-Case -Name "M17 the forbidden features name the Penitent One, Torrent and every agent's logo" -Check {
         $bible = Get-BibleSection -Heading "Character bible"
         $match = [regex]::Match($bible, '(?s)^### Forbidden features\s*$(.*?)(?=^### |\z)', [System.Text.RegularExpressions.RegexOptions]::Multiline)
         if (-not $match.Success) { return "no '### Forbidden features' field" }
-        foreach ($name in @("Penitent One", "Wolf", "Souls")) {
+        foreach ($name in @("Penitent One", "Torrent", "Anthropic logo", "Cursor logo")) {
             if (-not $match.Groups[1].Value.Contains($name)) { return "$name is not forbidden by name" }
         }
         return $true
@@ -3835,8 +3864,8 @@ try {
         $banner = [System.IO.File]::ReadAllText((Join-Path $repoRoot "docs\assets\banner.svg"))
         if (-not $banner.Contains('viewBox="0 0 960 300"')) { return "the viewBox is not 0 0 960 300" }
         if ([regex]::Matches($banner, '<text[^>]*>Tazuna</text>').Count -ne 1) { return "no text element reading exactly Tazuna" }
-        $group = [regex]::Match($banner, '(?s)<g id="tameshi"[^>]*>(.*?)</g>')
-        if (-not $group.Success) { return "no <g id=`"tameshi`">" }
+        $group = [regex]::Match($banner, '(?s)<g id="frenatus"[^>]*>(.*?)</g>')
+        if (-not $group.Success) { return "no <g id=`"frenatus`">" }
         $runs = [regex]::Matches($group.Groups[1].Value, 'M\d+ \d+h\d+').Count
         if ($runs -lt 200) { return "the mascot group has $runs pixel runs, expected at least 200" }
         return $true
@@ -3852,10 +3881,10 @@ try {
         return $true
     }
 
-    Test-Case -Name "M20 the Acknowledgments credit Tameshi as the original mascot, the Tech Leads Club and the video, and Clawd is gone" -Check {
+    Test-Case -Name "M20 the Acknowledgments credit Frenatus as the original mascot, the Tech Leads Club and the video, and Clawd is gone" -Check {
         $credits = Get-ReadmeSection -Heading "Acknowledgments"
         if ($null -eq $credits) { return "no '## Acknowledgments' section" }
-        foreach ($token in @("Tameshi", "the original mascot", "Tech Leads Club", "https://www.youtube.com/watch?v=yKLedmyUDMA")) {
+        foreach ($token in @("Frenatus", "the original mascot", "Tech Leads Club", "https://www.youtube.com/watch?v=yKLedmyUDMA")) {
             if (-not $credits.Contains($token)) { return "the Acknowledgments do not contain '$token'" }
         }
         if ($readme -match "(?i)clawd") { return "the README still mentions Clawd" }
@@ -3966,21 +3995,238 @@ try {
         $root = Copy-MascotScratch
         Remove-RenderedOutput -Root $root
         $path = Join-Path $root "docs\assets\tazuna\src\case-pair.txt"
-        $grid = @("A #e3b25b", "a #b4833a", "---") + @(1..64 | ForEach-Object { ("Aa" * 32) })
+        $grid = @("A #d9a948", "a #a5752a", "---") + @(1..64 | ForEach-Object { ("Aa" * 32) })
         Set-Content -LiteralPath $path -Value ($grid -join "`n")
         $read = Read-SpriteGrid -Path $path
         $pair = @((Get-SpriteHex -Grid $read -X 0 -Y 0), (Get-SpriteHex -Grid $read -X 1 -Y 0))
-        if (($pair -join ",") -ne "#e3b25b,#b4833a") { return ("the reader saw A,a as " + ($pair -join ",")) }
+        if (($pair -join ",") -ne "#d9a948,#a5752a") { return ("the reader saw A,a as " + ($pair -join ",")) }
         $run = Invoke-MascotRenderer -Root $root
         if ($run.Code -ne 0) { return "the renderer exited $($run.Code): $($run.Output)" }
         $svg = [System.IO.File]::ReadAllText((Join-Path $root "docs\assets\tazuna\case-pair.svg"))
-        foreach ($hex in @("#e3b25b", "#b4833a")) { if (-not $svg.Contains('fill="' + $hex + '"')) { return "case-pair.svg has no $hex" } }
+        foreach ($hex in @("#d9a948", "#a5752a")) { if (-not $svg.Contains('fill="' + $hex + '"')) { return "case-pair.svg has no $hex" } }
+        return $true
+    }
+
+    # Tenebrism and the expression system: most of the figure sinks into shadow,
+    # the light comes from the upper left, the eye answers the seal, and the
+    # README wears the same palette.
+
+    function Get-DarkShare {
+        # The fraction of figure pixels whose relative luminance is at most that of the coat's shadow, #2f2530.
+        param($Grid)
+        $limit = Get-RelativeLuminance -Hex "#2f2530"
+        $figure = 0
+        $dark = 0
+        for ($y = 0; $y -lt $Grid.Height; $y++) {
+            for ($x = 0; $x -lt $Grid.Width; $x++) {
+                $hex = Get-SpriteHex -Grid $Grid -X $x -Y $y
+                if ($null -eq $hex) { continue }
+                $figure++
+                if ((Get-RelativeLuminance -Hex $hex) -le $limit) { $dark++ }
+            }
+        }
+        if ($figure -eq 0) { return 0 }
+        return $dark / $figure
+    }
+
+    function Test-LitFromLeft {
+        # $true when the right half's figure pixels are darker on average than the left half's.
+        param($Grid)
+        $half = [int]($Grid.Width / 2)
+        $sum = @(0.0, 0.0)
+        $count = @(0, 0)
+        for ($y = 0; $y -lt $Grid.Height; $y++) {
+            for ($x = 0; $x -lt $Grid.Width; $x++) {
+                $hex = Get-SpriteHex -Grid $Grid -X $x -Y $y
+                if ($null -eq $hex) { continue }
+                $side = [int]($x -ge $half)
+                $sum[$side] += Get-RelativeLuminance -Hex $hex
+                $count[$side]++
+            }
+        }
+        if (($count[0] -eq 0) -or ($count[1] -eq 0)) { return "one half holds no figure pixel" }
+        $left = $sum[0] / $count[0]
+        $right = $sum[1] / $count[1]
+        if ($right -lt $left) { return $true }
+        return ("right half mean luminance {0:N4} is not below the left half's {1:N4}" -f $right, $left)
+    }
+
+    Test-Case -Name "M28 the eye's bone catchlight shows at rest and on pass and is gone on fail" -Check {
+        foreach ($name in @("view-front", "expr-success")) {
+            if ((Get-SpriteHex -Grid (Get-MascotGrid -Name $name) -X 35 -Y 19) -ne "#e2d6bb") { return "$name`: no bone catchlight at (35,19)" }
+        }
+        $closed = Get-MascotGrid -Name "expr-error"
+        for ($y = 17; $y -le 21; $y++) {
+            for ($x = 33; $x -le 39; $x++) {
+                if ((Get-SpriteHex -Grid $closed -X $x -Y $y) -eq "#e2d6bb") { return "expr-error: the eye still shows a catchlight at ($x,$y)" }
+            }
+        }
+        return $true
+    }
+
+    Test-Case -Name "M29 most of every figure sinks into shadow: half of each sprite" -Check {
+        foreach ($name in $mascotKept) {
+            $share = Get-DarkShare -Grid (Get-MascotGrid -Name $name)
+            if ($share -lt 0.5) { return ("{0}: {1:P0} of figure pixels are dark, expected at least 50%" -f $name, $share) }
+        }
+        # why: a share that is always high would pass here too; an all-gold grid must read as 0.
+        $planted = New-TestGrid -Colours @{ "A" = "#d9a948" } -Rows @("AAAA", "AAAA")
+        if ((Get-DarkShare -Grid $planted) -ne 0) { return "an all-gold grid was read as dark" }
+        return $true
+    }
+
+    Test-Case -Name "M30 the hero is lit from the left: its right half is darker than its left" -Check {
+        $verdict = Test-LitFromLeft -Grid (Get-MascotGrid -Name "view-front")
+        if ($verdict -ne $true) { return "view-front: $verdict" }
+        # why: a comparison that never fails would pass here too; a grid lit from the right must be refused.
+        $planted = New-TestGrid -Colours @{ "K" = $mascotInk; "W" = "#f9e7a8" } -Rows @("KKWW", "KKWW")
+        if ((Test-LitFromLeft -Grid $planted) -eq $true) { return "a grid lit from the right was accepted" }
+        return $true
+    }
+
+    function Find-MissingStyleWord {
+        # "<where>: <word>" for each of tenebrist, baroque and gothic a text does not contain.
+        param([string]$Where, [string]$Text)
+        $missing = @()
+        foreach ($word in @("tenebrist", "baroque", "gothic")) {
+            if ($Text.IndexOf($word, [System.StringComparison]::OrdinalIgnoreCase) -lt 0) { $missing += "${Where}: $word" }
+        }
+        return $missing
+    }
+
+    Test-Case -Name "M31 the bible names the style tenebrist, baroque and gothic in the identity, the pixel rules and the prompt" -Check {
+        $bible = Get-BibleSection -Heading "Character bible"
+        if ($null -eq $bible) { return "no '## Character bible' section" }
+        $missing = @()
+        foreach ($field in @("Visual identity", "Pixel-art rules")) {
+            $match = [regex]::Match($bible, '(?s)^### ' + [regex]::Escape($field) + '\s*$(.*?)(?=^### |\z)', [System.Text.RegularExpressions.RegexOptions]::Multiline)
+            if (-not $match.Success) { return "no '### $field' field" }
+            $missing += @(Find-MissingStyleWord -Where $field -Text $match.Groups[1].Value)
+        }
+        $prompt = Get-BibleSection -Heading "Image generation prompt"
+        if ($null -eq $prompt) { return "no '## Image generation prompt' section" }
+        $missing += @(Find-MissingStyleWord -Where "Image generation prompt" -Text $prompt)
+        if ($missing.Count -gt 0) { return ("missing: " + ($missing -join ", ")) }
+        # why: a scan that never reports would pass here too; a text without gothic must be reported.
+        $planted = @(Find-MissingStyleWord -Where "planted" -Text "A tenebrist, baroque samurai.")
+        if (($planted -join ",") -ne "planted: gothic") { return ("the planted text was reported as: " + ($planted -join ", ")) }
+        return $true
+    }
+
+    function Find-SectionWithoutEpigraph {
+        # The "## " headings of a markdown text whose first non-blank line is not an italic blockquote "> *...*".
+        param([string]$Text)
+        $missing = @()
+        foreach ($match in [regex]::Matches($Text, '(?ms)^## (.+?)[ \t]*\r?\n(.*?)(?=^## |\z)')) {
+            $first = @($match.Groups[2].Value -split "`r?`n" | Where-Object { $_.Trim() })[0]
+            if ($first -notmatch '^> \*[^*].*\*\s*$') { $missing += $match.Groups[1].Value }
+        }
+        return $missing
+    }
+
+    Test-Case -Name "P21 each of the 9 README sections opens with an italic blockquote epigraph" -Check {
+        $missing = @(Find-SectionWithoutEpigraph -Text $readme)
+        if ($missing.Count -gt 0) { return ("no epigraph: " + ($missing -join ", ")) }
+        $found = [regex]::Matches($readme, '(?m)^## ').Count
+        if ($found -ne $readmeSections.Count) { return "$found sections checked, expected $($readmeSections.Count)" }
+        # why: a scan that never reports would pass here too; a plain opening line must be reported.
+        $planted = @(Find-SectionWithoutEpigraph -Text "## One`n`n> *A vow.*`n`ntext`n`n## Two`n`nplain text`n")
+        if (($planted -join ",") -ne "Two") { return ("the planted text was reported as: " + ($planted -join ", ")) }
+        return $true
+    }
+
+    function Find-OffPaletteBadge {
+        # Each shields.io badge whose colour or labelColor is not in the palette, as "<colour> in <badge path>".
+        param([string]$Text, [string[]]$Palette)
+        $hits = @()
+        foreach ($match in [regex]::Matches($Text, 'img\.shields\.io/badge/([^?)\s]+)\?([^)\s]*)')) {
+            $colour = "#" + (($match.Groups[1].Value -split "-")[-1]).ToLowerInvariant()
+            $label = [regex]::Match($match.Groups[2].Value, '(?:^|&)labelColor=([0-9a-fA-F]{6})')
+            if ($Palette -notcontains $colour) { $hits += "$colour in $($match.Groups[1].Value)" }
+            if (-not $label.Success) { $hits += "no labelColor in $($match.Groups[1].Value)" }
+            elseif ($Palette -notcontains ("#" + $label.Groups[1].Value.ToLowerInvariant())) { $hits += "labelColor #$($label.Groups[1].Value) in $($match.Groups[1].Value)" }
+        }
+        return $hits
+    }
+
+    Test-Case -Name "P22 every README badge is coloured from the mascot palette" -Check {
+        $palette = @(Get-MascotPalette)
+        if ([regex]::Matches($readme, 'img\.shields\.io/badge/').Count -lt 4) { return "fewer than 4 badges" }
+        $hits = @(Find-OffPaletteBadge -Text $readme -Palette $palette)
+        if ($hits.Count -gt 0) { return ("off the palette: " + ($hits -join "; ")) }
+        # why: a scan that never reports would pass here too; a red badge must be reported.
+        $planted = @(Find-OffPaletteBadge -Text "(https://img.shields.io/badge/x-y-ff0000?style=flat-square&labelColor=0c0809)" -Palette $palette)
+        if (($planted -join ",") -ne "#ff0000 in x-y-ff0000") { return ("the planted badge was reported as: " + ($planted -join ", ")) }
+        return $true
+    }
+
+    function Find-MermaidThemeProblem {
+        # Why a mermaid block is not coloured only from the palette, or nothing when it is.
+        param([string]$Block, [string[]]$Palette)
+        $problems = @()
+        $colours = @([regex]::Matches($Block, '#[0-9a-fA-F]{6}\b') | ForEach-Object { $_.Value.ToLowerInvariant() } | Select-Object -Unique)
+        if ($colours.Count -eq 0) { $problems += "no colour" }
+        foreach ($colour in $colours) { if ($Palette -notcontains $colour) { $problems += "$colour is off the palette" } }
+        $kind = Get-MermaidKind -Block $Block
+        if ($kind -eq "stateDiagram-v2") {
+            $aliases = @{}
+            foreach ($m in [regex]::Matches($Block, '(?m)^\s*state\s+"[^"]+"\s+as\s+(\w+)')) { $aliases[$m.Groups[1].Value] = $true }
+            $states = @{}
+            foreach ($m in [regex]::Matches($Block, '(?m)^\s*(\[\*\]|\w+)\s*-->\s*(\[\*\]|\w+)')) {
+                foreach ($id in @($m.Groups[1].Value, $m.Groups[2].Value)) { if ($id -ne "[*]") { $states[$id] = $true } }
+            }
+            foreach ($id in $aliases.Keys) { $states[$id] = $true }
+            $classed = @{}
+            foreach ($m in [regex]::Matches($Block, '(?m)^\s*class\s+([\w,]+)\s+\w+\s*$')) { foreach ($id in ($m.Groups[1].Value -split ",")) { $classed[$id] = $true } }
+            foreach ($id in ($states.Keys | Sort-Object)) { if (-not $classed.ContainsKey($id)) { $problems += "state $id has no class" } }
+        }
+        else {
+            $first = @($Block -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ })[0]
+            if ((-not $first.StartsWith("%%{init:")) -or ($first -notmatch "theme['""]?\s*:\s*['""]base['""]")) { $problems += "$kind does not open with a %%{init:} directive setting theme base" }
+        }
+        return $problems
+    }
+
+    Test-Case -Name "P23 the 4 README diagrams are coloured only from the palette, the loop through classDef" -Check {
+        $palette = @(Get-MascotPalette)
+        $blocks = @(Get-MermaidBlock -Text $readme)
+        if ($blocks.Count -ne 4) { return "$($blocks.Count) mermaid blocks" }
+        foreach ($block in $blocks) {
+            $problems = @(Find-MermaidThemeProblem -Block $block -Palette $palette)
+            if ($problems.Count -gt 0) { return ((Get-MermaidKind -Block $block) + ": " + ($problems -join "; ")) }
+        }
+        # why: a scan that never reports would pass here too; a red flowchart and an unclassed state must be reported.
+        $red = @(Find-MermaidThemeProblem -Block "%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#ff0000'}}}%%`nflowchart TD`n  a --> b" -Palette $palette)
+        if (($red -join ",") -ne "#ff0000 is off the palette") { return ("the planted flowchart was reported as: " + ($red -join ", ")) }
+        $state = @(Find-MermaidThemeProblem -Block "stateDiagram-v2`n  A --> B`n  classDef x fill:#0c0809`n  class A x" -Palette $palette)
+        if (($state -join ",") -ne "state B has no class") { return ("the planted state diagram was reported as: " + ($state -join ", ")) }
+        return $true
+    }
+
+    function Find-OffPaletteColour {
+        # The hex colours of an SVG text that are not in the palette; "no colour" when it holds none.
+        param([string]$Svg, [string[]]$Palette)
+        $colours = @([regex]::Matches($Svg, '#[0-9a-fA-F]{6}\b') | ForEach-Object { $_.Value.ToLowerInvariant() } | Select-Object -Unique)
+        if ($colours.Count -eq 0) { return @("no colour") }
+        return @($colours | Where-Object { $Palette -notcontains $_ })
+    }
+
+    Test-Case -Name "P24 the README shows the palette divider at least 3 times" -Check {
+        $shown = [regex]::Matches($readme, '<img src="docs/assets/divider\.svg"').Count
+        if ($shown -lt 3) { return "the divider is shown $shown time(s), expected at least 3" }
+        $palette = @(Get-MascotPalette)
+        $svg = [System.IO.File]::ReadAllText((Join-Path $repoRoot "docs\assets\divider.svg"))
+        $off = @(Find-OffPaletteColour -Svg $svg -Palette $palette)
+        if ($off.Count -gt 0) { return ("divider.svg: " + ($off -join ", ")) }
+        # why: a scan that never reports would pass here too; a red rect must be reported.
+        $planted = @(Find-OffPaletteColour -Svg '<svg><rect fill="#d9a948"/><rect fill="#FF0000"/></svg>' -Palette $palette)
+        if (($planted -join ",") -ne "#ff0000") { return ("the planted svg was reported as: " + ($planted -join ", ")) }
         return $true
     }
 
     # The animated banner and the smaller mascot set.
 
-    $bannerTagline = "A verification gate for Claude Code that works in any stack."
+    $bannerTagline = "A verification gate for Claude Code and Cursor that works in any stack."
 
     function Get-SvgGroup {
         # The inner markup of the flat <g id="..."> group, or $null.
@@ -4021,23 +4267,23 @@ try {
 
     Test-Case -Name "P12 the renderer writes a banner whose front and lit frames alternate over a 6s cycle" -Check {
         $render = Get-RenderedBanner
-        $front = Get-SvgGroup -Svg $render.Banner -Id "tameshi"
-        $lit = Get-SvgGroup -Svg $render.Banner -Id "tameshi-lit"
-        if ($null -eq $front) { return "no <g id=`"tameshi`">" }
-        if ($null -eq $lit) { return "no <g id=`"tameshi-lit`">" }
-        foreach ($frame in @(@("tameshi", $front), @("tameshi-lit", $lit))) {
+        $front = Get-SvgGroup -Svg $render.Banner -Id "frenatus"
+        $lit = Get-SvgGroup -Svg $render.Banner -Id "frenatus-lit"
+        if ($null -eq $front) { return "no <g id=`"frenatus`">" }
+        if ($null -eq $lit) { return "no <g id=`"frenatus-lit`">" }
+        foreach ($frame in @(@("frenatus", $front), @("frenatus-lit", $lit))) {
             $runs = [regex]::Matches($frame[1], 'M\d+ \d+h\d+').Count
             if ($runs -lt 200) { return "$($frame[0]) has $runs pixel runs, expected at least 200" }
         }
         $success = Get-SvgGroup -Svg $render.Success -Id "expr-success"
         if ($lit -ne $success) { return "the lit frame is not the expr-success drawing" }
-        $animation = Get-CssAnimation -Svg $render.Banner -Id "tameshi-lit"
-        if ($null -eq $animation) { return "#tameshi-lit declares no animation" }
-        if ($animation.Duration -ne "6s") { return "#tameshi-lit animates over $($animation.Duration)" }
+        $animation = Get-CssAnimation -Svg $render.Banner -Id "frenatus-lit"
+        if ($null -eq $animation) { return "#frenatus-lit declares no animation" }
+        if ($animation.Duration -ne "6s") { return "#frenatus-lit animates over $($animation.Duration)" }
         if ($render.Banner -notmatch ('@keyframes\s+' + [regex]::Escape($animation.Name) + '\s*\{')) { return "no @keyframes $($animation.Name)" }
         # invariant: 4 s front, 2 s lit, so the lit frame turns on at two thirds of the cycle and the front frame turns off there.
-        $rest = Get-CssAnimation -Svg $render.Banner -Id "tameshi"
-        if (($null -eq $rest) -or ($rest.Duration -ne "6s")) { return "#tameshi does not alternate on a 6s cycle" }
+        $rest = Get-CssAnimation -Svg $render.Banner -Id "frenatus"
+        if (($null -eq $rest) -or ($rest.Duration -ne "6s")) { return "#frenatus does not alternate on a 6s cycle" }
         foreach ($pair in @(@($animation.Name, "0", "1"), @($rest.Name, "1", "0"))) {
             $frames = [regex]::Match($render.Banner, '@keyframes\s+' + [regex]::Escape($pair[0]) + '\s*\{(.*?\})\s*\}')
             if ($frames.Groups[1].Value -notmatch ('0%, 66\.66% \{ opacity: ' + $pair[1] + '; \} 66\.67%, 100% \{ opacity: ' + $pair[2] + '; \}')) { return "@keyframes $($pair[0]) does not switch from $($pair[1]) to $($pair[2]) at two thirds" }
@@ -4050,11 +4296,11 @@ try {
         $media = [regex]::Match($render.Banner, '(?s)@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{(.*?\})\s*\}')
         if (-not $media.Success) { return "no @media (prefers-reduced-motion: reduce) block" }
         if ($media.Groups[1].Value -notmatch 'animation:\s*none') { return "the reduced-motion block does not set animation: none" }
-        foreach ($id in @("tameshi", "tameshi-lit", "verify-lit")) {
+        foreach ($id in @("frenatus", "frenatus-lit", "verify-lit")) {
             if (@(Get-CssRuleBody -Svg $media.Groups[1].Value -Id $id | Where-Object { $_ -match 'animation:\s*none' }).Count -eq 0) { return "the reduced-motion block does not stop #$id" }
         }
-        $resting = @(Get-CssRuleBody -Svg $render.Banner -Id "tameshi-lit" | Where-Object { $_ -match 'opacity:\s*0\s*(;|$)' })
-        if ($resting.Count -eq 0) { return "#tameshi-lit does not rest at opacity 0" }
+        $resting = @(Get-CssRuleBody -Svg $render.Banner -Id "frenatus-lit" | Where-Object { $_ -match 'opacity:\s*0\s*(;|$)' })
+        if ($resting.Count -eq 0) { return "#frenatus-lit does not rest at opacity 0" }
         return $true
     }
 
@@ -4078,10 +4324,10 @@ try {
         return $true
     }
 
-    Test-Case -Name "P16 the banner is a dark card with a cream title" -Check {
+    Test-Case -Name "P16 the banner is a dark card with a gilded title" -Check {
         $card = [regex]::Match($committedBanner, '<rect\b[^>]*>')
-        if ((-not $card.Success) -or ($card.Value -notmatch 'fill="#141413"')) { return "the first rect is not filled #141413: $($card.Value)" }
-        if ($committedBanner -notmatch '<text\b[^>]*fill="#faf9f5"[^>]*>Tazuna</text>') { return "the title is not filled #faf9f5" }
+        if ((-not $card.Success) -or ($card.Value -notmatch 'fill="#1c1419"')) { return "the first rect is not filled #1c1419: $($card.Value)" }
+        if ($committedBanner -notmatch '<text\b[^>]*fill="#f9e7a8"[^>]*>Tazuna</text>') { return "the title is not filled #f9e7a8" }
         return $true
     }
 
@@ -4089,8 +4335,8 @@ try {
         $group = [regex]::Match($committedBanner, '(?s)<g\b[^>]*>((?:(?!</?g\b).)*<text\b[^>]*>Verify</text>(?:(?!</?g\b).)*)</g>')
         if (-not $group.Success) { return "no <g> holding the Verify text" }
         $ids = @([regex]::Matches($group.Groups[1].Value, '\bid="([^"]+)"') | ForEach-Object { $_.Groups[1].Value })
-        $seal = Get-CssAnimation -Svg $committedBanner -Id "tameshi-lit"
-        if ($null -eq $seal) { return "#tameshi-lit declares no animation" }
+        $seal = Get-CssAnimation -Svg $committedBanner -Id "frenatus-lit"
+        if ($null -eq $seal) { return "#frenatus-lit declares no animation" }
         foreach ($id in $ids) {
             $step = Get-CssAnimation -Svg $committedBanner -Id $id
             if (($null -ne $step) -and ($step.Name -eq $seal.Name) -and ($step.Duration -eq $seal.Duration)) { return $true }
