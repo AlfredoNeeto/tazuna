@@ -3792,7 +3792,7 @@ try {
         return $true
     }
 
-    Test-Case -Name "M11 only the 4 sprites the README uses have a source and a rendered svg, and there is no sheet" -Check {
+    Test-Case -Name "M11 only the 4 kept sprites have a source and a rendered svg, and there is no sheet" -Check {
         $expected = @($mascotKept | Sort-Object)
         $svgs = @(Get-ChildItem -LiteralPath $mascotAssets -File | ForEach-Object { $_.Name } | Sort-Object)
         if (($svgs -join ",") -ne (($expected | ForEach-Object { "$_.svg" }) -join ",")) { return ("docs/assets/tazuna holds: " + ($svgs -join ", ")) }
@@ -4304,13 +4304,21 @@ try {
         return $true
     }
 
-    Test-Case -Name "P14 How it works shows the passed and the failed verification side by side" -Check {
-        $section = Get-ReadmeSection -Heading "How it works"
-        if ($null -eq $section) { return "no '## How it works' section" }
-        $pair = @(@($section -split "(`r?`n){2,}") | Where-Object {
-            ($_ -match '<img src="docs/assets/tazuna/expr-success\.svg"[^>]*\balt="[^"]*passed[^"]*"') -and
-            ($_ -match '<img src="docs/assets/tazuna/expr-error\.svg"[^>]*\balt="[^"]*failed[^"]*"') })
-        if ($pair.Count -eq 0) { return "no paragraph with expr-success (alt: passed) beside expr-error (alt: failed)" }
+    function Find-MiddleMascot {
+        # The mascot sprites a markdown text shows between its first "## " section and its last one.
+        param([string]$Text)
+        $first = $Text.IndexOf("`n## ")
+        $last = $Text.LastIndexOf("`n## ")
+        if (($first -lt 0) -or ($last -le $first)) { return @() }
+        return @([regex]::Matches($Text.Substring($first, $last - $first), 'docs/assets/tazuna/([a-z0-9-]+)\.svg') | ForEach-Object { $_.Groups[1].Value })
+    }
+
+    Test-Case -Name "P14 the mascot stays out of the middle of the README: only the banner and the footer show it" -Check {
+        $middle = @(Find-MiddleMascot -Text $readme)
+        if ($middle.Count -gt 0) { return ("the middle of the README shows: " + ($middle -join ", ")) }
+        # why: a scan that never reports would pass here too; a sprite planted between two sections must be reported.
+        $planted = @(Find-MiddleMascot -Text "head`n## One`n<img src=`"docs/assets/tazuna/expr-error.svg`">`n## Two`nfoot")
+        if (($planted -join ",") -ne "expr-error") { return ("the planted README was reported as: " + ($planted -join ", ")) }
         return $true
     }
 

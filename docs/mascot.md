@@ -261,13 +261,14 @@ then rows of equal width, one character per pixel, `.` transparent. `scripts/ren
 writes `docs/assets/tazuna/<name>.svg` for each, `docs/assets/banner.svg` and
 `docs/assets/social-preview.png`.
 
-Only the sprites something shows are kept:
+Only these four sprites are kept. `expr-error` is shown nowhere: it stays as the fail state
+that the checks measure the rest and pass states against.
 
 | Name | Shown in |
 | --- | --- |
 | `view-front` | the banner at rest, the social preview |
-| `expr-success` | the banner's lit frame, the README's passed verification and footer |
-| `expr-error` | the README's failed verification |
+| `expr-success` | the banner's lit frame, the README's footer |
+| `expr-error` | nowhere; the fail state for the checks |
 | `icon-32` | the GitHub avatar |
 
 To add a sprite, write its source under `docs/assets/tazuna/src/` against this bible, then run
@@ -281,7 +282,8 @@ To add a sprite, write its source under `docs/assets/tazuna/src/` against this b
   ferrule under each: the workflow leads the model. Every 6 s the horse switches to
   `expr-success` for 2 s and the `Verify` step lights with it; a viewer who prefers reduced
   motion sees only the front view.
-- **README footer**: one sprite from `docs/assets/tazuna/`, shown at 128 px.
+- **README footer**: one sprite from `docs/assets/tazuna/`, shown at 128 px. The mascot appears
+  only in the banner and the footer, never between the sections (P14).
 - **Social preview**: upload `docs/assets/social-preview.png` (1280x640) in Settings > General.
 - **Avatar**: `docs/assets/tazuna/icon-32.svg`, or the same at any integer scale.
 - **Themes**: every sprite is checked on white `#ffffff` and on GitHub dark `#0d1117`; the ink

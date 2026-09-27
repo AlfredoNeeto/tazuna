@@ -5,13 +5,13 @@
 <h1>Tazuna</h1>
 
 [![version](https://img.shields.io/badge/version-1.1.1-bd2e37?style=flat-square&labelColor=0c0809)](CHANGELOG.md)
-[![Claude Code](https://img.shields.io/badge/Claude%20Code-2.1.277%2B-7f1721?style=flat-square&logo=claude&logoColor=d9a948&labelColor=0c0809)](https://docs.claude.com/en/docs/claude-code/overview)
+[![agent](https://img.shields.io/badge/agent-Claude%20Code%202.1.277%2B%20or%20Cursor-7f1721?style=flat-square&labelColor=0c0809)](#prerequisites)
 [![Windows PowerShell](https://img.shields.io/badge/Windows%20PowerShell-5.1-6a4716?style=flat-square&labelColor=0c0809)](#prerequisites)
 [![license](https://img.shields.io/badge/license-MIT-a5752a?style=flat-square&labelColor=0c0809)](LICENSE)
 
 *No turn ends on untested code. The seal lights only for what was proven.*
 
-A verification gate for Claude Code that works in any stack, with the Tech Leads Club workflow ready to use on Windows. One command sets up the machine, one command sets up a project.
+A verification gate for Claude Code and Cursor that works in any stack, with the Tech Leads Club workflow ready to use on Windows. One command sets up the machine and another sets up each project.
 
 [Getting started](#getting-started) · [Usage](#usage) · [Report a problem](https://github.com/AlfredoNeeto/tazuna/issues)
 
@@ -36,11 +36,11 @@ A verification gate for Claude Code that works in any stack, with the Tech Leads
 
 > *No work is finished because its author says so.*
 
-A coding agent tends to end its turn with "done" on code that nobody ran. More rules in the prompt do not fix that. What fixes it is little context, room to implement, and proof that the result is right, checked by someone who did not write it. Tazuna sets that up for Claude Code and enforces the step that matters most: a turn that changed code cannot end quietly, because the agent is sent back to run the project's own build and tests first.
+A coding agent often ends its turn with "done" on code that nobody ran, and adding rules to the prompt does not change that. What helps is a small context, room to implement, and proof from someone who did not write the code. Tazuna sets that up for Claude Code or Cursor, whichever you use, and enforces one step itself: a turn that changed code cannot end until the agent has run the project's own build and tests.
 
-Tazuna (手綱) means reins, the part of a horse's harness the rider holds. In the writing on agents, *Agent = Model + Harness*, and a harness combines guides, which steer the agent before it acts (`AGENTS.md`, rules, skills, permissions), with sensors, which check the result afterwards (`verify.ps1`, the Verifier, `/review-change`). Reins do both: they steer the horse and let the rider feel it. The strength is still the horse's.
+Tazuna (手綱) means reins, the part of a horse's harness the rider holds. Writing on agents describes *Agent = Model + Harness*, where the harness combines guides, which steer the agent before it acts (`AGENTS.md`, rules, skills, permissions), and sensors, which check the result afterwards (`verify.ps1`, the Verifier, `/review-change`). Reins do both: they steer the horse and let the rider feel it, and the horse still supplies the strength.
 
-Tazuna itself is small: it installs the Tech Leads Club's `tlc-*` skills and `harness-toolkit`, adds its own verification gate and `/review-change`, and leaves everything else to your repository.
+Tazuna itself is small. It installs the Tech Leads Club's `tlc-*` skills and `harness-toolkit`, adds its own verification gate and `/review-change`, and leaves everything else to your repository.
 
 ## Getting started
 
@@ -53,12 +53,12 @@ Tazuna itself is small: it installs the Tech Leads Club's `tlc-*` skills and `ha
 | Windows PowerShell 5.1 | everything | it ships with Windows |
 | Git | cloning and updating | `setup` stops and says so |
 | Node.js 24+ | the toolkit, the skills, the MCP servers | `setup` stops and prints `winget install OpenJS.NodeJS.LTS` |
-| Claude Code 2.1.277+, or Cursor | the agent; either one is enough, see [docs/cursor.md](docs/cursor.md) | `setup` stops when neither is installed |
+| Claude Code 2.1.277+, or Cursor | the agent; either one is enough. With Cursor, open it once before `setup` ([docs/cursor.md](docs/cursor.md)) | `setup` stops when neither is installed |
 | `python3` | the validators of the `tlc-*` skills | a warning; the skills check the artifacts by reading them |
 
 ### Installation
 
-Run this in your own terminal, outside Claude Code:
+Run this in your own terminal, outside Claude Code and Cursor:
 
 ```powershell
 git clone https://github.com/AlfredoNeeto/tazuna.git "$HOME\tazuna"; & "$HOME\tazuna\bin\tazuna.cmd" setup
@@ -70,7 +70,7 @@ git clone https://github.com/AlfredoNeeto/tazuna.git "$HOME\tazuna"; & "$HOME\ta
 $env:Path += ";$HOME\tazuna\bin"
 ```
 
-`setup` copies `user/` into `~/.claude`, installs `harness-toolkit` 0.16.2 and runs `tlc harness install`, installs the `tlc-*` and `harness-eval` skills, the `ponytail` plugin and the user MCP servers, then runs `tazuna doctor`. Running it again repairs a machine that drifted. It replaces `~/.claude/settings.json` and `~/.claude/CLAUDE.md` with Tazuna's and keeps a backup of yours in `~/.claude\.harness-backup\`; those settings also switch off the claude.ai connectors and sync (`disableClaudeAiConnectors`). Run `setup` and `update` outside Claude Code, and call `bin\tazuna.cmd` rather than the `.ps1`, which an `AllSigned` execution policy blocks.
+`setup` installs `harness-toolkit` 0.16.2 and runs `tlc harness install`, installs the `tlc-*` and `harness-eval` skills and the user MCP servers, then runs `tazuna doctor`. Running it again repairs a machine that drifted. For Claude Code it also copies `user/` into `~/.claude` and adds the `ponytail` plugin. It replaces `~/.claude/settings.json` and `~/.claude/CLAUDE.md` with Tazuna's and keeps a backup of yours in `~/.claude\.harness-backup\`; those settings switch off the claude.ai connectors and sync (`disableClaudeAiConnectors`). For Cursor it puts the skills, the instructions as a rule, the toolkit hooks and the servers under `~/.cursor`, and with both installed it equips both. Run `setup` and `update` outside the agent, and call `bin\tazuna.cmd` rather than the `.ps1`, which an `AllSigned` execution policy blocks.
 
 ### Your first project
 
@@ -79,7 +79,7 @@ cd C:\src\MyApi
 tazuna init
 ```
 
-`init` detects the stack (`dotnet` or `generic`) and writes `AGENTS.md` plus `.claude\` with the permissions, the three hooks, stack rules and `scripts\verify.ps1`, the project's build and tests. It also trusts the workspace, since Claude Code silently ignores project hooks otherwise, and it never overwrites a file you edited unless you pass `-Force`. In `AGENTS.md`, write only what the code does not show; every line there goes into every turn.
+`init` detects the stack (`dotnet` or `generic`) and writes `AGENTS.md` plus `.claude\` with the permissions, the three hooks, stack rules and `scripts\verify.ps1`, the project's build and tests. Cursor reads those files too, and `init` adds `.cursor/hooks.json` and the stack rules as `.cursor/rules/*.mdc` for it. It also trusts the workspace, since Claude Code silently ignores project hooks otherwise, and never overwrites a file you edited unless you pass `-Force`. In `AGENTS.md`, write only what the code does not show, because every line there goes into every turn.
 
 <p align="center"><img src="docs/assets/divider.svg" alt="Ornamental divider in gold, lit from the left" width="480"></p>
 
@@ -144,7 +144,7 @@ flowchart TD
 | Work already decided in a work item, PRD or RFC | `/tlc-plan` to cut it into tasks, `/tlc-implement` to build each one |
 | Risky: security, money, data, a public contract | `/review-change`, even when the change is small |
 
-With `/tlc-spec-lean I want X`, the agent reads the code, asks only what is your decision, writes `.specs/features/<feature>/plan.md` and stops until you approve it. Each criterion becomes a check with the test that settles it; the agent builds, and a fresh Verifier that never saw the implementation proves every check. A changed screen is opened with Playwright before it is done.
+With `/tlc-spec-lean I want X`, the agent reads the code, asks you only about decisions that are yours, writes `.specs/features/<feature>/plan.md` and stops until you approve it. Each criterion becomes a check with the test that settles it. The agent builds, and a fresh Verifier that never saw the implementation proves every check. A changed screen is opened with Playwright before it is done.
 
 ### Adding an MCP server
 
@@ -158,7 +158,7 @@ With `/tlc-spec-lean I want X`, the agent reads the code, asks only what is your
 | `plantuml` | rendering PlantUML; the diagram text goes to `PLANTUML_SERVER_URL`, the public `plantuml.com` if unset |
 | `mermaid` | rendering Mermaid locally |
 
-The command merges the entry into the project's `.mcp.json` and enables it, with credentials only as `${VARIABLE}` placeholders. Restart Claude Code and approve the server. See [docs/mcp.md](docs/mcp.md).
+The command merges the entry into the project's `.mcp.json` and enables it, with credentials only as `${VARIABLE}` placeholders; restart Claude Code and approve the server. `.mcp.json` belongs to Claude Code, so in Cursor add the server to `.cursor/mcp.json` by hand. See [docs/mcp.md](docs/mcp.md).
 
 ### Commands
 
@@ -195,13 +195,14 @@ classDiagram
         class agentskills["agent-skills"] { <<artifact>> }
     }
     namespace user_home {
-        class instructions["~/.claude instructions and permissions"] { <<artifact>> }
+        class instructions["~/.claude instructions and permissions, ~/.cursor rules"] { <<artifact>> }
         class floor["toolkit hooks"] { <<artifact>> }
         class skills["tlc skills and harness-eval"] { <<artifact>> }
     }
     namespace your_project {
         class agents["AGENTS.md"] { <<artifact>> }
         class claude[".claude/ hooks, rules, verify.ps1"] { <<artifact>> }
+        class cursor[".cursor/ hooks and rules"] { <<artifact>> }
         class mcpjson[".mcp.json"] { <<artifact>> }
     }
     user ..> instructions : tazuna setup
@@ -209,10 +210,11 @@ classDiagram
     agentskills ..> skills : tazuna setup
     templates ..> agents : tazuna init
     templates ..> claude : tazuna init
+    templates ..> cursor : tazuna init
     catalog ..> mcpjson : tazuna mcp add
 ```
 
-What holds for every session lives in `~/.claude`; what belongs to the team lives in the project, in version control.
+What holds for every session lives in your user directory, `~/.claude` or `~/.cursor`; what belongs to the team lives in the project, in version control.
 
 ```mermaid
 %%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#2f2530', 'primaryTextColor': '#e2d6bb', 'primaryBorderColor': '#a5752a', 'lineColor': '#bd2e37', 'actorBkg': '#2f2530', 'actorBorder': '#a5752a', 'actorTextColor': '#e2d6bb', 'signalColor': '#bd2e37', 'signalTextColor': '#bd2e37', 'labelBoxBkgColor': '#3e0c13', 'labelBoxBorderColor': '#a5752a', 'labelTextColor': '#e2d6bb', 'loopTextColor': '#bd2e37', 'fontFamily': 'Georgia, serif'}}}%%
@@ -222,19 +224,17 @@ sequenceDiagram
     participant V as verify.ps1
     A->>G: the turn wants to end
     alt the code changed and verify.ps1 has not passed on it
-        G-->>A: exit 2 with the reason
+        G-->>A: sends the turn back with the reason
         A->>V: run build and tests
         V-->>A: VERIFICATION PASSED
         A->>G: the turn wants to end
-        G-->>A: exit 0, the turn ends
+        G-->>A: the turn ends
     else nothing changed, or it is already verified
-        G-->>A: exit 0, the turn ends
+        G-->>A: the turn ends
     end
 ```
 
-<p align="center"><img src="docs/assets/tazuna/expr-success.svg" alt="Frenatus with the seal on its chanfron lit: verification passed" width="128"> <img src="docs/assets/tazuna/expr-error.svg" alt="Frenatus with the seal on its chanfron cracked: verification failed" width="128"></p>
-
-The gate compares a fingerprint of the code with the last passing run, blocks once per turn, and fails open without a `verify.ps1` or on its own error. A run with `-SkipTests` does not count.
+The gate compares a fingerprint of the code with the last passing run, blocks once per turn, and fails open without a `verify.ps1` or on its own error. A run with `-SkipTests` does not count. Claude Code receives the reason through the `Stop` hook's exit code 2; Cursor receives it as a follow-up message from its `stop` hook.
 
 ## Safety
 
@@ -242,10 +242,10 @@ The gate compares a fingerprint of the code with the last passing run, blocks on
 
 | Protection | Enforced by |
 |---|---|
-| No turn ends on unverified code | the `Stop` hook, per project, in any stack |
-| No secret gets into a commit | the `PreToolUse` hook, which inspects what is staged |
-| Nothing is published or destroyed without you: `git push`, `reset --hard`, `clean`, `gh pr create`, `terraform apply` are denied, `commit` asks | permissions in `~/.claude/settings.json` |
-| Secrets stay out of the context: `.env`, `*.pem` and `~/.ssh` are unreadable, secret-looking output is masked | permissions and `harness-toolkit` |
+| No turn ends on unverified code | the `Stop` hook (`stop` in Cursor), per project, in any stack |
+| No secret gets into a commit | the `PreToolUse` hook (`beforeShellExecution` in Cursor), which inspects what is staged |
+| Nothing is published or destroyed without you: `git push`, `reset --hard`, `clean`, `gh pr create`, `terraform apply` are denied, `commit` asks | permissions in `~/.claude/settings.json`; Cursor has no permission rules, so there only the toolkit floor below applies |
+| Secrets stay out of the context: `.env`, `*.pem` and `~/.ssh` are unreadable, secret-looking output is masked | Claude Code permissions and `harness-toolkit` |
 | Nothing is destroyed outside the repository, and `push --force` is denied | the `harness-toolkit` floor, which in 0.16.2 sees only Bash tool commands; for PowerShell the `deny` rules hold |
 | No feature is done without independent proof | the Verifier and `validate_verification.py` |
 
@@ -262,7 +262,7 @@ The gate compares a fingerprint of the code with the last passing run, blocks on
 | `doctor`: `installed but not in the repository` | a skill or agent you added yourself; it stays active, and `setup` never removes it |
 | You want the toolkit's `harness-init` skill | it is hidden on purpose because it gitignores the project settings; use `tazuna init` |
 | `.tlc/` shows up as untracked | `tazuna init` adds `**/.tlc/harness/state/` to `.gitignore` |
-| Everything looks wrong | `claude --safe-mode` starts without any customisation |
+| Everything looks wrong in Claude Code | `claude --safe-mode` starts it without any customisation |
 
 <p align="center"><img src="docs/assets/divider.svg" alt="Ornamental divider in gold, lit from the left" width="480"></p>
 
@@ -294,4 +294,4 @@ Tazuna's own code is released under the MIT License, see [LICENSE](LICENSE). Wha
 - `humanizer` 3.0.0 comes from [akitaonrails/my-skills](https://github.com/akitaonrails/my-skills/tree/master/humanizer).
 - Frenatus is the original mascot of Tazuna, drawn for this repository in tenebrist pixel art ([docs/mascot.md](docs/mascot.md)); the layout follows [Best-README-Template](https://github.com/othneildrew/Best-README-Template).
 
-<p align="center"><img src="docs/assets/divider.svg" alt="Ornamental divider in gold, lit from the left" width="480"><br><img src="docs/assets/tazuna/expr-success.svg" alt="Frenatus with the seal on its chanfron lit, the sign of a passed verification" width="128"><br><sub>Plan, Checks, Build, Verify, Review. The rest the model reads from your repository.</sub></p>
+<p align="center"><img src="docs/assets/divider.svg" alt="Ornamental divider in gold, lit from the left" width="480"><br><img src="docs/assets/tazuna/expr-success.svg" alt="Frenatus with the seal on its chanfron lit, the sign of a passed verification" width="128"><br><sub>Plan, Checks, Build, Verify, Review. The model reads everything else from your repository.</sub></p>
