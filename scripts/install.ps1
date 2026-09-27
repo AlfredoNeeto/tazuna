@@ -6,6 +6,10 @@
     Copies everything under user/ into the directory reported by Get-ClaudeConfigDir
     (CLAUDE_CONFIG_DIR when set, otherwise ~/.claude).
 
+    When Cursor is installed (~/.cursor exists), also copies user/skills and
+    user/agents there, and writes user/CLAUDE.md as the global Cursor rule
+    rules/tazuna.mdc - Cursor reads no CLAUDE.md or settings.json of its own.
+
     The installer is idempotent: files whose contents already match are reported
     UNCHANGED and left alone. Any file that would be overwritten is backed up to
     <config>/.harness-backup/<timestamp>/ first.
@@ -21,6 +25,11 @@
 .PARAMETER NoTitle
     Leave the title out. tazuna setup passes it, because it prints its own.
 
+.PARAMETER NoClaude
+    Leave the Claude Code config directory alone. tazuna setup passes it on a
+    machine without Claude Code, where ~/.claude/settings.json would only be
+    imported by Cursor as a second set of hooks.
+
 .NOTES
     Set TAZUNA_SKIP_PATH=1 to leave the user PATH alone; the self-test does, so
     running it from any checkout never changes the machine's PATH.
@@ -34,7 +43,8 @@
 #>
 [CmdletBinding(SupportsShouldProcess)]
 param(
-    [switch]$NoTitle
+    [switch]$NoTitle,
+    [switch]$NoClaude
 )
 
 $ErrorActionPreference = "Stop"
@@ -44,10 +54,13 @@ Import-Module (Join-Path $PSScriptRoot "lib\Files.psm1") -Force
 Import-Module (Join-Path $PSScriptRoot "lib\Json.psm1") -Force
 Import-Module (Join-Path $PSScriptRoot "lib\Console.psm1") -Force
 Import-Module (Join-Path $PSScriptRoot "lib\Manifest.psm1") -Force
+Import-Module (Join-Path $PSScriptRoot "lib\Cursor.psm1") -Force
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $source = Join-Path $repoRoot "user"
 $target = Get-ClaudeConfigDir
+$cursorDir = Get-CursorConfigDir
+$hasCursor = Test-Path -LiteralPath $cursorDir
 
 if (-not $NoTitle) {
     Write-Banner -Title ("Tazuna " + (Get-HarnessManifest).Version) -Command "install"
@@ -55,10 +68,17 @@ if (-not $NoTitle) {
 }
 
 Write-Host "Source:  $source"
-Write-Host "Target:  $target"
 
-if ($env:CLAUDE_CONFIG_DIR) {
-    Write-Host "         (from CLAUDE_CONFIG_DIR)"
+if (-not $NoClaude) {
+    Write-Host "Target:  $target"
+
+    if ($env:CLAUDE_CONFIG_DIR) {
+        Write-Host "         (from CLAUDE_CONFIG_DIR)"
+    }
+}
+
+if ($hasCursor) {
+    Write-Host "Cursor:  $cursorDir"
 }
 
 Write-Host ""
@@ -102,7 +122,7 @@ if ($invalid.Count -gt 0) {
     exit 1
 }
 
-if (-not (Test-Path -LiteralPath $target)) {
+if ((-not $NoClaude) -and (-not (Test-Path -LiteralPath $target))) {
     # why: $WhatIfPreference before ShouldProcess, here and below - under -WhatIf
     # ShouldProcess prints its own "What if:" line, doubling the WHATIF one.
     if ($WhatIfPreference) {
@@ -115,26 +135,62 @@ if (-not (Test-Path -LiteralPath $target)) {
 
 $backupRoot = New-HarnessBackupRoot -ParentDirectory $target
 
+# One entry per file to write: where it comes from, where it goes, where its backup goes.
+$installs = @()
+
+if (-not $NoClaude) {
+    foreach ($file in $sourceFiles) {
+        $relative = Get-CompatibleRelativePath -BasePath $source -TargetPath $file.FullName
+        $installs += [PSCustomObject]@{ Source = $file.FullName; Root = $target; Relative = $relative; Backup = $backupRoot; Label = $relative }
+    }
+}
+
+$ruleStage = $null
+
+if ($hasCursor) {
+
+    $cursorBackup = New-HarnessBackupRoot -ParentDirectory $cursorDir
+
+    foreach ($file in $sourceFiles) {
+        $relative = Get-CompatibleRelativePath -BasePath $source -TargetPath $file.FullName
+        $top = $relative.Split([System.IO.Path]::DirectorySeparatorChar)[0]
+
+        if (@("skills", "agents") -contains $top) {
+            $installs += [PSCustomObject]@{ Source = $file.FullName; Root = $cursorDir; Relative = $relative; Backup = $cursorBackup; Label = "cursor: $relative" }
+        }
+    }
+
+    # why: Cursor keeps global rules as .mdc files in ~/.cursor/rules; it reads no ~/.claude/CLAUDE.md.
+    $ruleStage = Join-Path ([System.IO.Path]::GetTempPath()) ("tazuna-rule-" + [guid]::NewGuid().ToString("N").Substring(0, 8))
+    New-Item -ItemType Directory -Path $ruleStage -Force -WhatIf:$false | Out-Null
+    $staged = Join-Path $ruleStage "tazuna.mdc"
+    $instructions = [System.IO.File]::ReadAllText((Join-Path $source "CLAUDE.md"))
+    [System.IO.File]::WriteAllText($staged, (ConvertTo-CursorRule -Text $instructions -Description "Tazuna engineering instructions"))
+
+    $relative = Join-Path "rules" "tazuna.mdc"
+    $installs += [PSCustomObject]@{ Source = $staged; Root = $cursorDir; Relative = $relative; Backup = $cursorBackup; Label = "cursor: $relative" }
+}
+
 $created = 0
 $updated = 0
 $unchanged = 0
 
-foreach ($file in $sourceFiles) {
+foreach ($install in $installs) {
 
-    $relative = Get-CompatibleRelativePath -BasePath $source -TargetPath $file.FullName
-    $targetFile = Join-Path $target $relative
+    $relative = $install.Label
+    $targetFile = Join-Path $install.Root $install.Relative
 
     $willOverwrite = (Test-Path -LiteralPath $targetFile) -and
-                     -not (Test-FileContentEqual -ReferenceFile $file.FullName -DifferenceFile $targetFile)
+                     -not (Test-FileContentEqual -ReferenceFile $install.Source -DifferenceFile $targetFile)
 
     # -WhatIf must be passed explicitly: PowerShell preference variables do not
     # cross the module boundary, so the module function would otherwise write
     # for real during a dry run.
     $result = Copy-FileIfChanged `
-        -SourceFile $file.FullName `
+        -SourceFile $install.Source `
         -TargetFile $targetFile `
-        -BackupRoot $backupRoot `
-        -BackupRelativePath $relative `
+        -BackupRoot $install.Backup `
+        -BackupRelativePath $install.Relative `
         -WhatIf:$WhatIfPreference
 
     switch ($result) {
@@ -161,6 +217,10 @@ foreach ($file in $sourceFiles) {
             Write-Status -Label "UNCHANGED" -Detail $relative
         }
     }
+}
+
+if ($ruleStage) {
+    Remove-Item -LiteralPath $ruleStage -Recurse -Force -WhatIf:$false
 }
 
 # Put the harness on PATH, so `tazuna init` works from inside a project.
@@ -240,10 +300,12 @@ else {
     Write-Host ("Installed: {0} created, {1} updated, {2} unchanged." -f $created, $updated, $unchanged)
 }
 
-if (($updated -gt 0) -and (Test-Path -LiteralPath $backupRoot)) {
-    Write-Host ""
-    Write-Host "Previous versions backed up to:"
-    Write-Host "  $backupRoot"
+if ($updated -gt 0) {
+    foreach ($backup in @(@($installs | ForEach-Object { $_.Backup }) | Select-Object -Unique | Where-Object { Test-Path -LiteralPath $_ })) {
+        Write-Host ""
+        Write-Host "Previous versions backed up to:"
+        Write-Host "  $backup"
+    }
 }
 
 Write-Host ""

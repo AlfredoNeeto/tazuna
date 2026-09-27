@@ -79,6 +79,7 @@ Import-Module (Join-Path $PSScriptRoot "lib\Files.psm1") -Force
 Import-Module (Join-Path $PSScriptRoot "lib\Json.psm1") -Force
 Import-Module (Join-Path $PSScriptRoot "lib\Console.psm1") -Force
 Import-Module (Join-Path $PSScriptRoot "lib\Manifest.psm1") -Force
+Import-Module (Join-Path $PSScriptRoot "lib\Cursor.psm1") -Force
 
 function Get-SourceFile {
     <#
@@ -250,7 +251,8 @@ function Set-WorkspaceTrust {
 function Convert-PayloadPath {
     <#
         Maps the template payload directory name to the one a project uses.
-        templates/<type>/dot-claude/... installs as <project>/.claude/...
+        templates/<type>/dot-claude/... installs as <project>/.claude/...,
+        and dot-cursor/... as .cursor/...
     #>
     param(
         [Parameter(Mandatory = $true)]
@@ -262,6 +264,9 @@ function Convert-PayloadPath {
 
     if ($segments[0] -eq "dot-claude") {
         $segments[0] = ".claude"
+    }
+    elseif ($segments[0] -eq "dot-cursor") {
+        $segments[0] = ".cursor"
     }
 
     return ($segments -join $separator)
@@ -422,6 +427,26 @@ foreach ($key in ($seen.Keys | Sort-Object)) {
     }
 }
 
+# why: Cursor reads rules only as .mdc under .cursor/rules; generated from the
+# .claude/rules source so one rule has one source. Staged outside the project,
+# so -WhatIf and SKIP treat them exactly like any other template file.
+$ruleStage = Join-Path ([System.IO.Path]::GetTempPath()) ("tazuna-rules-" + [guid]::NewGuid().ToString("N").Substring(0, 8))
+$claudeRules = ".claude" + [System.IO.Path]::DirectorySeparatorChar + "rules" + [System.IO.Path]::DirectorySeparatorChar
+
+foreach ($file in @($templateFiles | Where-Object { $_.Relative.StartsWith($claudeRules) -and $_.Relative.EndsWith(".md") })) {
+
+    $name = [System.IO.Path]::GetFileNameWithoutExtension($file.Relative) + ".mdc"
+    $staged = Join-Path $ruleStage $name
+
+    New-Item -ItemType Directory -Path $ruleStage -Force -WhatIf:$false | Out-Null
+    [System.IO.File]::WriteAllText($staged, (ConvertTo-CursorRule -Text ([System.IO.File]::ReadAllText($file.FullName))))
+
+    $templateFiles += [PSCustomObject]@{
+        FullName = $staged
+        Relative = Join-Path ".cursor" (Join-Path "rules" $name)
+    }
+}
+
 $created = 0
 $updated = 0
 $unchanged = 0
@@ -476,6 +501,10 @@ foreach ($file in $templateFiles) {
             Write-Status -Label "UNCHANGED" -Detail $relative
         }
     }
+}
+
+if (Test-Path -LiteralPath $ruleStage) {
+    Remove-Item -LiteralPath $ruleStage -Recurse -Force -WhatIf:$false
 }
 
 # The backup directory lives inside the user's repository, so keep it out of

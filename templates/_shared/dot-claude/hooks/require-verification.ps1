@@ -39,11 +39,20 @@
 
       * A run with -SkipTests does not satisfy it. A partial verification must
         not answer a question that means "the tests pass".
+
+    Under Cursor (-Agent cursor, from .cursor/hooks.json) the same gates answer
+    in Cursor's format: a block is {"followup_message": ...} on stdout with exit
+    0, the project is the current directory, and loop_count > 0 plays the part
+    of stop_hook_active.
 #>
 [CmdletBinding()]
-param()
+param(
+    [string]$Agent
+)
 
 $ErrorActionPreference = "Stop"
+
+$script:cursor = ($Agent -eq "cursor")
 
 function Exit-Allow {
     exit 0
@@ -60,7 +69,15 @@ function Exit-Block {
         [string[]]$Lines
     )
 
-    [Console]::Error.Write(($Lines -join [Environment]::NewLine))
+    $text = ($Lines -join [Environment]::NewLine)
+
+    # why: Cursor's stop hook continues a turn only through followup_message; exit 2 means nothing there.
+    if ($script:cursor) {
+        [Console]::Out.Write((@{ followup_message = $text } | ConvertTo-Json -Compress))
+        exit 0
+    }
+
+    [Console]::Error.Write($text)
     exit 2
 }
 
@@ -255,6 +272,12 @@ try {
     if ($raw) {
         $payload = $raw | ConvertFrom-Json
 
+        # invariant: a Cursor payload is acted on only by the .cursor/hooks.json entry;
+        # the copy Cursor imports from .claude/settings.json steps aside.
+        if ($payload.PSObject.Properties["workspace_roots"] -and (-not $script:cursor)) {
+            Exit-Allow
+        }
+
         if ($payload.cwd) {
             $projectRoot = [string]$payload.cwd
         }
@@ -262,6 +285,15 @@ try {
         if ($payload.PSObject.Properties["stop_hook_active"]) {
             $stopHookActive = [bool]$payload.stop_hook_active
         }
+
+        if ($payload.PSObject.Properties["loop_count"]) {
+            $stopHookActive = ([int]$payload.loop_count -gt 0)
+        }
+    }
+
+    # why: Cursor runs project hooks from the project root and sends no cwd on stop.
+    if ($script:cursor -and (-not $payload.cwd)) {
+        $projectRoot = (Get-Location).Path
     }
 
     # Already nudged once this turn. Saying it again would only repeat itself.

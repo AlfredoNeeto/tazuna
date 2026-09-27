@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.1.0
+
+### Added
+
+- Cursor is supported as the agent, alongside or instead of Claude Code. `tazuna init` installs
+  `.cursor/hooks.json` and turns the stack rules into `.cursor/rules/*.mdc`; the hooks take
+  `-Agent cursor` and answer in Cursor's protocol, so the verification gate and the secret-commit
+  block hold there too. `tazuna setup` and `tazuna doctor` work on a Cursor-only machine: skills,
+  the reviewer agent, `rules/tazuna.mdc` and the user MCP servers go to the Cursor directory. See
+  [docs/cursor.md](docs/cursor.md).
+
+### Changed
+
+- `tazuna setup` stops only when neither Claude Code nor Cursor is installed.
+
 ## 1.0.0
 
 The first public release.

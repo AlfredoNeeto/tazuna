@@ -12,9 +12,14 @@
     that cries wolf gets removed, and a removed gate guarantees nothing.
 
     Always exits 0. This hook only observes.
+
+    Under Cursor (-Agent cursor) the project is the current directory: Cursor
+    runs project hooks from the project root.
 #>
 [CmdletBinding()]
-param()
+param(
+    [string]$Agent
+)
 
 $ErrorActionPreference = "Stop"
 
@@ -23,8 +28,17 @@ try {
 
     $projectRoot = $env:CLAUDE_PROJECT_DIR
 
+    if ($Agent -eq "cursor") {
+        $projectRoot = (Get-Location).Path
+    }
+
     if ($raw) {
         $payload = $raw | ConvertFrom-Json
+
+        # invariant: only the .cursor/hooks.json entry acts on a Cursor payload.
+        if ($payload.PSObject.Properties["workspace_roots"] -and ($Agent -ne "cursor")) {
+            exit 0
+        }
 
         if ($payload.cwd) {
             $projectRoot = [string]$payload.cwd

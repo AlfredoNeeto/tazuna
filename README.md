@@ -4,7 +4,7 @@
 
 <h1>Tazuna</h1>
 
-[![version](https://img.shields.io/badge/version-1.0.0-d97757?style=flat-square&labelColor=141413)](CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-1.1.0-d97757?style=flat-square&labelColor=141413)](CHANGELOG.md)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-2.1.277%2B-d97757?style=flat-square&logo=claude&logoColor=d97757&labelColor=141413)](https://docs.claude.com/en/docs/claude-code/overview)
 [![Windows PowerShell](https://img.shields.io/badge/Windows%20PowerShell-5.1-d97757?style=flat-square&labelColor=141413)](#prerequisites)
 [![license](https://img.shields.io/badge/license-MIT-b0aea5?style=flat-square&labelColor=141413)](LICENSE)
@@ -57,7 +57,7 @@ adds its own verification gate and `/review-change`, and leaves everything else 
 | Windows PowerShell 5.1 | everything | it ships with Windows |
 | Git | cloning and updating | `setup` stops and says so |
 | Node.js 24+ | the toolkit, the skills, the MCP servers | `setup` stops and prints `winget install OpenJS.NodeJS.LTS` |
-| Claude Code 2.1.277+ | `AGENTS.md` in projects | `doctor` fails |
+| Claude Code 2.1.277+, or Cursor | the agent; either one is enough, see [docs/cursor.md](docs/cursor.md) | `setup` stops when neither is installed |
 | `python3` | the validators of the `tlc-*` skills | a warning; the skills check the artifacts by reading them |
 
 ### Installation

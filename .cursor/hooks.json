@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "command": "powershell -NoProfile -ExecutionPolicy Bypass -File .claude/hooks/record-session-baseline.ps1 -Agent cursor",
+        "timeout": 60
+      }
+    ],
+    "beforeShellExecution": [
+      {
+        "command": "powershell -NoProfile -ExecutionPolicy Bypass -File .claude/hooks/block-secret-commit.ps1 -Agent cursor",
+        "timeout": 20
+      }
+    ],
+    "stop": [
+      {
+        "command": "powershell -NoProfile -ExecutionPolicy Bypass -File .claude/hooks/require-verification.ps1 -Agent cursor",
+        "timeout": 120
+      }
+    ]
+  }
+}

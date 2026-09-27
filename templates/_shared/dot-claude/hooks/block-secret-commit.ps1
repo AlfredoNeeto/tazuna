@@ -20,11 +20,18 @@
     It fails OPEN on its own errors. A hook that blocks every commit because
     git was momentarily unavailable would be disabled within a day, and a
     disabled hook protects nothing.
+
+    Under Cursor (-Agent cursor, as beforeShellExecution) the command arrives as
+    `command`, and every answer is also a {"permission": ...} object on stdout.
 #>
 [CmdletBinding()]
-param()
+param(
+    [string]$Agent
+)
 
 $ErrorActionPreference = "Stop"
+
+$script:cursor = ($Agent -eq "cursor")
 
 # Filenames that should never be committed.
 $secretFilePatterns = @(
@@ -47,6 +54,7 @@ $secretContentPatterns = @(
 )
 
 function Exit-Allow {
+    if ($script:cursor) { [Console]::Out.Write('{"permission":"allow"}') }
     exit 0
 }
 
@@ -69,7 +77,14 @@ function Exit-Block {
     $message += "Unstage them (git restore --staged <path>), add them to .gitignore,"
     $message += "and move the value into a local, uncommitted configuration file."
 
-    [Console]::Error.Write(($message -join [Environment]::NewLine))
+    $text = ($message -join [Environment]::NewLine)
+
+    if ($script:cursor) {
+        [Console]::Out.Write((@{ permission = "deny"; user_message = $message[0]; agent_message = $text } | ConvertTo-Json -Compress))
+        exit 2
+    }
+
+    [Console]::Error.Write($text)
     exit 2
 }
 
@@ -82,10 +97,19 @@ try {
 
     $payload = $raw | ConvertFrom-Json
 
+    # invariant: only the .cursor/hooks.json entry acts on a Cursor payload; the
+    # imported .claude/settings.json copy exits silently.
+    if ($payload.PSObject.Properties["workspace_roots"] -and (-not $script:cursor)) {
+        exit 0
+    }
+
     $command = ""
 
     if ($payload.tool_input -and $payload.tool_input.command) {
         $command = [string]$payload.tool_input.command
+    }
+    elseif ($script:cursor -and $payload.command) {
+        $command = [string]$payload.command
     }
 
     if (-not $command) {

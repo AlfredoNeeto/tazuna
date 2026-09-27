@@ -8,7 +8,8 @@
     in a bootstrap script.
 
     Checks performed:
-      - claude, git, node 24+ and the .NET SDK resolve on PATH
+      - claude or Cursor, git, node 24+ and the .NET SDK resolve on PATH
+      - with Cursor: the toolkit hooks, the skills and the global rule in ~/.cursor
       - the harness-toolkit hooks are wired and every harness skill is installed
       - Claude Code is at least the version required for AGENTS.md support
       - the configuration directory resolves consistently (CLAUDE_CONFIG_DIR aware)
@@ -86,7 +87,14 @@ Write-Host "---------"
 
 $claude = Get-Command claude -ErrorAction SilentlyContinue
 
-if ($null -eq $claude) {
+# invariant: Claude Code and Cursor are each optional; the machine needs one of them.
+$cursorDir = Get-CursorConfigDir
+$hasCursor = Test-Path -LiteralPath $cursorDir
+
+if (($null -eq $claude) -and $hasCursor) {
+    Write-Host "  --        claude not on PATH (Cursor only: the Claude Code checks are skipped)"
+}
+elseif ($null -eq $claude) {
     Add-Failure "Claude Code not found on PATH."
 }
 else {
@@ -170,368 +178,416 @@ else {
     Add-Warning "python3 does not run: the tlc-* skills call it for their validators, and fall back to reading the artifacts. winget install Python.Python.3.12"
 }
 
-Write-Host ""
-Write-Host "Installed harness"
-Write-Host "-----------------"
+if ($null -ne $claude) {
 
-if (-not (Test-Path -LiteralPath $configDir)) {
-    Add-Failure "Configuration directory does not exist: $configDir"
-}
-else {
-    foreach ($required in @("CLAUDE.md", "settings.json")) {
+    Write-Host ""
+    Write-Host "Installed harness"
+    Write-Host "-----------------"
 
-        $path = Join-Path $configDir $required
+    if (-not (Test-Path -LiteralPath $configDir)) {
+        Add-Failure "Configuration directory does not exist: $configDir"
+    }
+    else {
+        foreach ($required in @("CLAUDE.md", "settings.json")) {
 
-        if (Test-Path -LiteralPath $path) {
-            Add-Pass $required
+            $path = Join-Path $configDir $required
+
+            if (Test-Path -LiteralPath $path) {
+                Add-Pass $required
+            }
+            else {
+                Add-Failure "$required is missing from $configDir"
+            }
         }
-        else {
-            Add-Failure "$required is missing from $configDir"
+
+        $settingsPath = Join-Path $configDir "settings.json"
+
+        if (Test-Path -LiteralPath $settingsPath) {
+
+            $parseError = $null
+
+            if (Test-JsonFile -Path $settingsPath -ErrorMessage ([ref]$parseError)) {
+                Add-Pass "settings.json parses as JSON"
+            }
+            else {
+                Add-Failure "settings.json is not valid JSON: $parseError"
+            }
         }
     }
 
-    $settingsPath = Join-Path $configDir "settings.json"
+    Write-Host ""
+    Write-Host "Repository drift"
+    Write-Host "----------------"
 
-    if (Test-Path -LiteralPath $settingsPath) {
-
-        $parseError = $null
-
-        if (Test-JsonFile -Path $settingsPath -ErrorMessage ([ref]$parseError)) {
-            Add-Pass "settings.json parses as JSON"
-        }
-        else {
-            Add-Failure "settings.json is not valid JSON: $parseError"
-        }
+    if (-not (Test-Path -LiteralPath $source)) {
+        Add-Failure "user/ directory not found at $source"
     }
-}
+    else {
+        $sourceFiles = @(Get-ChildItem -LiteralPath $source -File -Recurse -Force)
+        function Test-InstalledFileMatches {
+        <#
+            Claude Code owns settings.json and rewrites it - reordering keys and
+            switching to LF - so a byte comparison reported drift after every clean
+            install about a file whose content had not changed. JSON is therefore
+            compared by content; everything else by bytes, where formatting is the
+            author's and a change to it is a real change.
+        #>
+        param(
+            [Parameter(Mandatory = $true)][string]$Source,
+            [Parameter(Mandatory = $true)][string]$Installed
+        )
 
-Write-Host ""
-Write-Host "Repository drift"
-Write-Host "----------------"
+        if ([System.IO.Path]::GetExtension($Source) -eq ".json") {
 
-if (-not (Test-Path -LiteralPath $source)) {
-    Add-Failure "user/ directory not found at $source"
-}
-else {
-    $sourceFiles = @(Get-ChildItem -LiteralPath $source -File -Recurse -Force)
-    function Test-InstalledFileMatches {
-    <#
-        Claude Code owns settings.json and rewrites it - reordering keys and
-        switching to LF - so a byte comparison reported drift after every clean
-        install about a file whose content had not changed. JSON is therefore
-        compared by content; everything else by bytes, where formatting is the
-        author's and a change to it is a real change.
-    #>
-    param(
-        [Parameter(Mandatory = $true)][string]$Source,
-        [Parameter(Mandatory = $true)][string]$Installed
-    )
+            # The harness-toolkit merges its own hooks block into settings.json;
+            # that is expected, not drift.
+            try {
+                $reference = Get-Content -LiteralPath $Source -Raw | ConvertFrom-Json
+                $difference = Get-Content -LiteralPath $Installed -Raw | ConvertFrom-Json
+            }
+            catch {
+                return $false
+            }
 
-    if ([System.IO.Path]::GetExtension($Source) -eq ".json") {
+            foreach ($document in @($reference, $difference)) {
+                if ($document.PSObject.Properties["hooks"]) { $document.PSObject.Properties.Remove("hooks") }
+            }
 
-        # The harness-toolkit merges its own hooks block into settings.json;
-        # that is expected, not drift.
-        try {
-            $reference = Get-Content -LiteralPath $Source -Raw | ConvertFrom-Json
-            $difference = Get-Content -LiteralPath $Installed -Raw | ConvertFrom-Json
-        }
-        catch {
-            return $false
+            return ((Get-JsonCanonicalForm -Value $reference) -eq (Get-JsonCanonicalForm -Value $difference))
         }
 
-        foreach ($document in @($reference, $difference)) {
-            if ($document.PSObject.Properties["hooks"]) { $document.PSObject.Properties.Remove("hooks") }
-        }
-
-        return ((Get-JsonCanonicalForm -Value $reference) -eq (Get-JsonCanonicalForm -Value $difference))
+        return (Test-FileContentEqual -ReferenceFile $Source -DifferenceFile $Installed)
     }
 
-    return (Test-FileContentEqual -ReferenceFile $Source -DifferenceFile $Installed)
-}
+    $drifted = 0
 
-$drifted = 0
+        foreach ($file in $sourceFiles) {
 
-    foreach ($file in $sourceFiles) {
+            $relative = Get-CompatibleRelativePath -BasePath $source -TargetPath $file.FullName
+            $installed = Join-Path $configDir $relative
 
-        $relative = Get-CompatibleRelativePath -BasePath $source -TargetPath $file.FullName
-        $installed = Join-Path $configDir $relative
-
-        if (-not (Test-Path -LiteralPath $installed)) {
-            Add-Failure "$relative is in the repository but not installed."
-            $drifted++
+            if (-not (Test-Path -LiteralPath $installed)) {
+                Add-Failure "$relative is in the repository but not installed."
+                $drifted++
+            }
+            elseif (-not (Test-InstalledFileMatches -Source $file.FullName -Installed $installed)) {
+                Add-Warning "$relative differs between the repository and $configDir"
+                $drifted++
+            }
         }
-        elseif (-not (Test-InstalledFileMatches -Source $file.FullName -Installed $installed)) {
-            Add-Warning "$relative differs between the repository and $configDir"
-            $drifted++
+
+        if ($drifted -eq 0) {
+            Add-Pass "$($sourceFiles.Count) file(s) match the installed harness"
         }
     }
 
-    if ($drifted -eq 0) {
-        Add-Pass "$($sourceFiles.Count) file(s) match the installed harness"
-    }
-}
+        # Drift is two-directional. Copying covers what the repository added; nothing
+        # covers what it removed, so a deleted skill or agent stays installed and
+        # active forever while the check above reports everything matching.
+        $ownedDirectories = @("agents", "skills")
 
-    # Drift is two-directional. Copying covers what the repository added; nothing
-    # covers what it removed, so a deleted skill or agent stays installed and
-    # active forever while the check above reports everything matching.
-    $ownedDirectories = @("agents", "skills")
+        # Claude Code manages synced and .trash itself; the agent-skills CLI installs
+        # the tlc skills and `tlc harness install` links harness-init.
+        $notOurs = @("synced", ".trash", "harness-init") + @($manifest.AgentSkills)
 
-    # Claude Code manages synced and .trash itself; the agent-skills CLI installs
-    # the tlc skills and `tlc harness install` links harness-init.
-    $notOurs = @("synced", ".trash", "harness-init") + @($manifest.AgentSkills)
+        $orphans = @()
 
-    $orphans = @()
+        foreach ($owned in $ownedDirectories) {
 
-    foreach ($owned in $ownedDirectories) {
+            $installedDirectory = Join-Path $configDir $owned
+            $sourceDirectory = Join-Path $source $owned
 
-        $installedDirectory = Join-Path $configDir $owned
-        $sourceDirectory = Join-Path $source $owned
-
-        if (-not (Test-Path -LiteralPath $installedDirectory)) {
-            continue
-        }
-
-        foreach ($entry in (Get-ChildItem -LiteralPath $installedDirectory -Force)) {
-
-            if ($notOurs -contains $entry.Name) {
+            if (-not (Test-Path -LiteralPath $installedDirectory)) {
                 continue
             }
 
-            if (-not (Test-Path -LiteralPath (Join-Path $sourceDirectory $entry.Name))) {
-                $orphans += "$owned/$($entry.Name)"
+            foreach ($entry in (Get-ChildItem -LiteralPath $installedDirectory -Force)) {
+
+                if ($notOurs -contains $entry.Name) {
+                    continue
+                }
+
+                if (-not (Test-Path -LiteralPath (Join-Path $sourceDirectory $entry.Name))) {
+                    $orphans += "$owned/$($entry.Name)"
+                }
             }
+        }
+
+        if ($orphans.Count -gt 0) {
+            Add-Warning ("installed but not in the repository, so still active: " + ($orphans -join ", "))
+        }
+        else {
+            Add-Pass "No orphaned agents or skills"
+        }
+
+    Write-Host ""
+    Write-Host "Toolkit and skills"
+    Write-Host "------------------"
+
+    $settingsText = ""
+    $installedSettings = Join-Path $configDir "settings.json"
+
+    if (Test-Path -LiteralPath $installedSettings) {
+        $settingsText = Get-Content -LiteralPath $installedSettings -Raw
+    }
+
+    if ($settingsText -match "tlc-exec") {
+        Add-Pass "harness-toolkit hooks are wired in settings.json"
+    }
+    else {
+        Add-Failure "no tlc-exec hook in settings.json - the harness-toolkit is not wired; run: tazuna setup"
+    }
+
+    foreach ($skill in (@($manifest.AgentSkills) + @("review-change"))) {
+
+        if (Test-Path -LiteralPath (Join-Path $configDir (Join-Path "skills" (Join-Path $skill "SKILL.md")))) {
+            Add-Pass "skill $skill"
+        }
+        else {
+            Add-Failure "skill $skill is missing; run: tazuna setup"
         }
     }
 
-    if ($orphans.Count -gt 0) {
-        Add-Warning ("installed but not in the repository, so still active: " + ($orphans -join ", "))
+    Write-Host ""
+    Write-Host "Permission rules"
+    Write-Host "----------------"
+
+    if ($null -eq $claude) {
+        Add-Warning "Cannot validate permission rules without Claude Code."
     }
     else {
-        Add-Pass "No orphaned agents or skills"
-    }
-
-Write-Host ""
-Write-Host "Toolkit and skills"
-Write-Host "------------------"
-
-$settingsText = ""
-$installedSettings = Join-Path $configDir "settings.json"
-
-if (Test-Path -LiteralPath $installedSettings) {
-    $settingsText = Get-Content -LiteralPath $installedSettings -Raw
-}
-
-if ($settingsText -match "tlc-exec") {
-    Add-Pass "harness-toolkit hooks are wired in settings.json"
-}
-else {
-    Add-Failure "no tlc-exec hook in settings.json - the harness-toolkit is not wired; run: tazuna setup"
-}
-
-foreach ($skill in (@($manifest.AgentSkills) + @("review-change"))) {
-
-    if (Test-Path -LiteralPath (Join-Path $configDir (Join-Path "skills" (Join-Path $skill "SKILL.md")))) {
-        Add-Pass "skill $skill"
-    }
-    else {
-        Add-Failure "skill $skill is missing; run: tazuna setup"
-    }
-}
-
-Write-Host ""
-Write-Host "Permission rules"
-Write-Host "----------------"
-
-if ($null -eq $claude) {
-    Add-Warning "Cannot validate permission rules without Claude Code."
-}
-else {
-    # `claude doctor` parses the effective settings files and reports malformed
-    # permission rules, which JSON validation alone cannot catch.
-    $doctorOutput = ""
-
-    try {
-        $previousPreference = $ErrorActionPreference
-        $ErrorActionPreference = "Continue"
-        $doctorOutput = (& claude doctor | Out-String)
-        $ErrorActionPreference = $previousPreference
-    }
-    catch {
+        # `claude doctor` parses the effective settings files and reports malformed
+        # permission rules, which JSON validation alone cannot catch.
         $doctorOutput = ""
-        Add-Warning "Could not run 'claude doctor': $($_.Exception.Message)"
+
+        try {
+            $previousPreference = $ErrorActionPreference
+            $ErrorActionPreference = "Continue"
+            $doctorOutput = (& claude doctor | Out-String)
+            $ErrorActionPreference = $previousPreference
+        }
+        catch {
+            $doctorOutput = ""
+            Add-Warning "Could not run 'claude doctor': $($_.Exception.Message)"
+        }
+
+        if ($doctorOutput -match "Invalid permission rule") {
+
+            foreach ($line in ($doctorOutput -split "`n")) {
+                if ($line -match "Invalid permission rule") {
+                    Add-Failure $line.Trim()
+                }
+            }
+        }
+        elseif ($doctorOutput -ne "") {
+            Add-Pass "No malformed permission rules reported by 'claude doctor'"
+        }
     }
 
-    if ($doctorOutput -match "Invalid permission rule") {
+    Write-Host ""
+    Write-Host "Plugins"
+    Write-Host "-------"
 
-        foreach ($line in ($doctorOutput -split "`n")) {
-            if ($line -match "Invalid permission rule") {
-                Add-Failure $line.Trim()
+    # The harness declares plugins in user/settings.json so a new machine gets them.
+    # A declared-but-missing plugin is silent otherwise, and CLAUDE.md now relies on
+    # ponytail for the code-minimality rules it no longer states itself.
+    $declaredPlugins = @()
+
+    $sourceSettings = Join-Path $source "settings.json"
+
+    if (Test-Path -LiteralPath $sourceSettings) {
+
+        # JSON validity is already reported above. Parsing again here must not abort
+        # the run, or one invalid file would hide every check that follows it.
+        try {
+
+            $settings = Get-Content -LiteralPath $sourceSettings -Raw | ConvertFrom-Json
+
+            if ($settings.enabledPlugins) {
+                $declaredPlugins = @($settings.enabledPlugins.PSObject.Properties.Name | Where-Object { $_ })
+            }
+        }
+        catch {
+            $declaredPlugins = @()
+        }
+    }
+
+    if ($declaredPlugins.Count -eq 0) {
+        Add-Pass "No plugins declared"
+    }
+    else {
+
+        # Ask the CLI what is actually installed, not the settings file what is
+        # declared. On a new machine the declaration is present from the first
+        # install and the plugin is not there yet, so reading the declaration back
+        # reports "enabled" about something that does not exist. `plugin disable`
+        # also keeps a plugin installed, so the listing's own enabled flag is what
+        # settles it.
+        $liveEnabled = @{}
+        $liveUnreadable = $false
+
+        try {
+
+            $pluginJson = (& claude plugin list --json) -join "`n"
+
+            if ($pluginJson) {
+
+                foreach ($installed in (ConvertFrom-Json $pluginJson)) {
+                    $liveEnabled[$installed.id] = [bool]$installed.enabled
+                }
+            }
+        }
+        catch {
+            $liveUnreadable = $true
+        }
+
+        foreach ($declared in $declaredPlugins) {
+
+            if ($liveUnreadable) {
+                Add-Warning "$declared could not be checked: 'claude plugin list' did not answer"
+            }
+            elseif (-not $liveEnabled.ContainsKey($declared)) {
+                Add-Warning "$declared is declared but not installed; run: claude plugin install $declared"
+            }
+            elseif (-not $liveEnabled[$declared]) {
+                Add-Warning "$declared is installed but disabled; run: claude plugin enable $($declared.Split('@')[0])"
+            }
+            else {
+                Add-Pass "$declared is enabled"
             }
         }
     }
-    elseif ($doctorOutput -ne "") {
-        Add-Pass "No malformed permission rules reported by 'claude doctor'"
-    }
-}
 
-Write-Host ""
-Write-Host "Plugins"
-Write-Host "-------"
+    Write-Host ""
+    Write-Host "MCP servers"
+    Write-Host "-----------"
 
-# The harness declares plugins in user/settings.json so a new machine gets them.
-# A declared-but-missing plugin is silent otherwise, and CLAUDE.md now relies on
-# ponytail for the code-minimality rules it no longer states itself.
-$declaredPlugins = @()
+    # The catalogue is version-controlled; the registration is machine-local. A
+    # server in mcp/servers.json that was never registered here is the exact gap
+    # that makes a second machine quietly different from this one.
+    $catalogue = Join-Path $repoRoot (Join-Path "mcp" "servers.json")
 
-$sourceSettings = Join-Path $source "settings.json"
+    $declaredServers = @()
 
-if (Test-Path -LiteralPath $sourceSettings) {
+    if (Test-Path -LiteralPath $catalogue) {
 
-    # JSON validity is already reported above. Parsing again here must not abort
-    # the run, or one invalid file would hide every check that follows it.
-    try {
+        try {
 
-        $settings = Get-Content -LiteralPath $sourceSettings -Raw | ConvertFrom-Json
+            $catalogueJson = Get-Content -LiteralPath $catalogue -Raw | ConvertFrom-Json
 
-        if ($settings.enabledPlugins) {
-            $declaredPlugins = @($settings.enabledPlugins.PSObject.Properties.Name | Where-Object { $_ })
-        }
-    }
-    catch {
-        $declaredPlugins = @()
-    }
-}
-
-if ($declaredPlugins.Count -eq 0) {
-    Add-Pass "No plugins declared"
-}
-else {
-
-    # Ask the CLI what is actually installed, not the settings file what is
-    # declared. On a new machine the declaration is present from the first
-    # install and the plugin is not there yet, so reading the declaration back
-    # reports "enabled" about something that does not exist. `plugin disable`
-    # also keeps a plugin installed, so the listing's own enabled flag is what
-    # settles it.
-    $liveEnabled = @{}
-    $liveUnreadable = $false
-
-    try {
-
-        $pluginJson = (& claude plugin list --json) -join "`n"
-
-        if ($pluginJson) {
-
-            foreach ($installed in (ConvertFrom-Json $pluginJson)) {
-                $liveEnabled[$installed.id] = [bool]$installed.enabled
+            if ($catalogueJson.mcpServers) {
+                $declaredServers = @($catalogueJson.mcpServers.PSObject.Properties.Name | Where-Object { $_ })
             }
         }
-    }
-    catch {
-        $liveUnreadable = $true
-    }
-
-    foreach ($declared in $declaredPlugins) {
-
-        if ($liveUnreadable) {
-            Add-Warning "$declared could not be checked: 'claude plugin list' did not answer"
-        }
-        elseif (-not $liveEnabled.ContainsKey($declared)) {
-            Add-Warning "$declared is declared but not installed; run: claude plugin install $declared"
-        }
-        elseif (-not $liveEnabled[$declared]) {
-            Add-Warning "$declared is installed but disabled; run: claude plugin enable $($declared.Split('@')[0])"
-        }
-        else {
-            Add-Pass "$declared is enabled"
+        catch {
+            Add-Failure "mcp/servers.json does not parse"
         }
     }
-}
 
-Write-Host ""
-Write-Host "MCP servers"
-Write-Host "-----------"
-
-# The catalogue is version-controlled; the registration is machine-local. A
-# server in mcp/servers.json that was never registered here is the exact gap
-# that makes a second machine quietly different from this one.
-$catalogue = Join-Path $repoRoot (Join-Path "mcp" "servers.json")
-
-$declaredServers = @()
-
-if (Test-Path -LiteralPath $catalogue) {
-
-    try {
-
-        $catalogueJson = Get-Content -LiteralPath $catalogue -Raw | ConvertFrom-Json
-
-        if ($catalogueJson.mcpServers) {
-            $declaredServers = @($catalogueJson.mcpServers.PSObject.Properties.Name | Where-Object { $_ })
-        }
+    if ($declaredServers.Count -eq 0) {
+        Write-Host "  --        none declared"
     }
-    catch {
-        Add-Failure "mcp/servers.json does not parse"
-    }
-}
+    else {
 
-if ($declaredServers.Count -eq 0) {
-    Write-Host "  --        none declared"
-}
-else {
-
-    # `claude mcp list` reports reachability as well as registration, so this
-    # distinguishes "not set up on this machine" from "set up but unreachable".
-    $mcpListing = ""
-
-    try {
-        $mcpListing = (& claude mcp list) -join "`n"
-    }
-    catch {
+        # `claude mcp list` reports reachability as well as registration, so this
+        # distinguishes "not set up on this machine" from "set up but unreachable".
         $mcpListing = ""
+
+        try {
+            $mcpListing = (& claude mcp list) -join "`n"
+        }
+        catch {
+            $mcpListing = ""
+        }
+
+        foreach ($server in $declaredServers) {
+
+            if (-not $mcpListing.Contains($server)) {
+                Add-Warning "$server is declared but not registered here; run: tazuna setup"
+                continue
+            }
+
+            $line = @($mcpListing -split "`n" | Where-Object { $_.Contains($server) }) | Select-Object -First 1
+
+            if ($line -and $line.Contains("Connected")) {
+                Add-Pass "$server is registered and reachable"
+                continue
+            }
+
+            # Registering an MCP server writes a JSON entry. It does not check that
+            # the command exists, so a stdio server whose runtime is missing
+            # registers happily and then never starts. Reported as "network, or the
+            # service is down", that sent someone looking at their connection for a
+            # server that had nothing to run - measured on a second machine, where
+            # serena registered with no uvx installed.
+            $command = $null
+
+            if ($catalogueJson -and $catalogueJson.mcpServers.PSObject.Properties[$server]) {
+                $command = $catalogueJson.mcpServers.$server.command
+            }
+
+            if ($command -and (-not (Get-Command $command -ErrorAction SilentlyContinue))) {
+
+                Add-Warning "$server cannot start: '$command' is not in PATH"
+                Write-Host "            it is registered, so this is not a registration problem."
+                Write-Host "            install whatever provides '$command', open a new shell, then"
+                Write-Host "            re-run this check. bootstrap.ps1 prints the command for the"
+                Write-Host "            runtimes this harness expects."
+                continue
+            }
+
+            if ($command) {
+                Add-Warning "$server is registered and '$command' exists, but it did not start"
+            }
+            else {
+                Add-Warning "$server is registered but did not connect (network, or the service is down)"
+            }
+        }
     }
 
-    foreach ($server in $declaredServers) {
+}
 
-        if (-not $mcpListing.Contains($server)) {
-            Add-Warning "$server is declared but not registered here; run: tazuna setup"
-            continue
-        }
+# ---------------------------------------------------------------------------
+# Cursor
+# ---------------------------------------------------------------------------
+# Cursor reads its own directory; nothing under the Claude config reaches it.
 
-        $line = @($mcpListing -split "`n" | Where-Object { $_.Contains($server) }) | Select-Object -First 1
+if ($hasCursor) {
 
-        if ($line -and $line.Contains("Connected")) {
-            Add-Pass "$server is registered and reachable"
-            continue
-        }
+    Write-Host ""
+    Write-Host "Cursor"
+    Write-Host "------"
 
-        # Registering an MCP server writes a JSON entry. It does not check that
-        # the command exists, so a stdio server whose runtime is missing
-        # registers happily and then never starts. Reported as "network, or the
-        # service is down", that sent someone looking at their connection for a
-        # server that had nothing to run - measured on a second machine, where
-        # serena registered with no uvx installed.
-        $command = $null
+    Add-Pass "Cursor -> $cursorDir"
 
-        if ($catalogueJson -and $catalogueJson.mcpServers.PSObject.Properties[$server]) {
-            $command = $catalogueJson.mcpServers.$server.command
-        }
+    $cursorHooks = Join-Path $cursorDir "hooks.json"
+    $cursorHooksText = ""
+    if (Test-Path -LiteralPath $cursorHooks) { $cursorHooksText = Get-Content -LiteralPath $cursorHooks -Raw }
 
-        if ($command -and (-not (Get-Command $command -ErrorAction SilentlyContinue))) {
+    if ($cursorHooksText -match "tlc-exec") {
+        Add-Pass "harness-toolkit hooks are wired in $cursorHooks"
+    }
+    else {
+        Add-Failure "no harness-toolkit hook in $cursorHooks - run: tazuna setup"
+    }
 
-            Add-Warning "$server cannot start: '$command' is not in PATH"
-            Write-Host "            it is registered, so this is not a registration problem."
-            Write-Host "            install whatever provides '$command', open a new shell, then"
-            Write-Host "            re-run this check. bootstrap.ps1 prints the command for the"
-            Write-Host "            runtimes this harness expects."
-            continue
-        }
+    $cursorSkills = Join-Path $cursorDir "skills"
 
-        if ($command) {
-            Add-Warning "$server is registered and '$command' exists, but it did not start"
+    foreach ($skill in (@($manifest.AgentSkills) + @("review-change"))) {
+
+        if (Test-Path -LiteralPath (Join-Path $cursorSkills (Join-Path $skill "SKILL.md"))) {
+            Add-Pass "Cursor skill $skill"
         }
         else {
-            Add-Warning "$server is registered but did not connect (network, or the service is down)"
+            Add-Failure "skill $skill is missing from $cursorSkills; run: tazuna setup"
         }
+    }
+
+    if (Test-Path -LiteralPath (Join-Path $cursorDir (Join-Path "rules" "tazuna.mdc"))) {
+        Add-Pass "global rule rules	azuna.mdc"
+    }
+    else {
+        Add-Failure "rules	azuna.mdc is missing from $cursorDir; run: tazuna setup"
     }
 }
 

@@ -33,6 +33,7 @@ Import-Module (Join-Path $PSScriptRoot "lib\Paths.psm1") -Force
 Import-Module (Join-Path $PSScriptRoot "lib\Console.psm1") -Force
 Import-Module (Join-Path $PSScriptRoot "lib\Manifest.psm1") -Force
 Import-Module (Join-Path $PSScriptRoot "lib\Toolchain.psm1") -Force
+Import-Module (Join-Path $PSScriptRoot "lib\Cursor.psm1") -Force
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $manifest = Get-HarnessManifest
@@ -117,7 +118,27 @@ function Test-Prerequisite {
     return $false
 }
 
-Test-Prerequisite -Command "claude" -Purpose "Claude Code itself" -Required | Out-Null
+# invariant: Claude Code and Cursor are each optional; setup needs at least one of them.
+$hasClaude = [bool](Get-Command claude -ErrorAction SilentlyContinue)
+$cursorDir = Get-CursorConfigDir
+$hasCursor = Test-Path -LiteralPath $cursorDir
+
+if ($hasClaude) { Write-Status -Label "OK" -Detail "claude - Claude Code" }
+else { Write-Host "  --        claude - Claude Code (not installed; its steps are skipped)" }
+
+if ($hasCursor) { Write-Status -Label "OK" -Detail "Cursor - $cursorDir" }
+else { Write-Host "  --        Cursor - $cursorDir not found (its steps are skipped)" }
+
+if ((-not $hasClaude) -and (-not $hasCursor)) {
+    Write-Host ""
+    Write-Host "Cannot continue: neither Claude Code nor Cursor is installed."
+    Write-Host ""
+    Write-Host "  npm install -g @anthropic-ai/claude-code"
+    Write-Host "  or install Cursor and open it once, so $cursorDir exists"
+    Write-Host ""
+    exit 1
+}
+
 Test-Prerequisite -Command "git"    -Purpose "version control, the drift check and update" -Required | Out-Null
 # Optional toolchains, listed so a new machine can see what it is missing. None
 # is required: the project templates detect whichever stack a repository uses.
@@ -131,7 +152,6 @@ if ($blocking.Count -gt 0) {
     Write-Host ("Cannot continue: {0} is not installed." -f ($blocking -join ", "))
     Write-Host ""
     Write-Host "  winget install --id=Git.Git -e"
-    Write-Host "  npm install -g @anthropic-ai/claude-code"
     Write-Host ""
     exit 1
 }
@@ -155,9 +175,11 @@ Write-Status -Label "OK" -Detail "node $nodeMajor"
 
 # The AGENTS.md support the project templates rely on landed in 2.1.277. Below
 # that, a scaffolded project looks complete and its instructions are ignored.
-$claudeVersion = ((& claude --version) -split " ")[0]
+if ($hasClaude) {
+    $claudeVersion = ((& claude --version) -split " ")[0]
 
-Write-Status -Label "OK" -Detail "Claude Code $claudeVersion"
+    Write-Status -Label "OK" -Detail "Claude Code $claudeVersion"
+}
 
 # ---------------------------------------------------------------------------
 # The user harness
@@ -165,7 +187,7 @@ Write-Status -Label "OK" -Detail "Claude Code $claudeVersion"
 
 Start-Step "User harness"
 
-& (Join-Path $PSScriptRoot "install.ps1") -NoTitle -WhatIf:$WhatIfPreference
+& (Join-Path $PSScriptRoot "install.ps1") -NoTitle -NoClaude:(-not $hasClaude) -WhatIf:$WhatIfPreference
 
 if ($LASTEXITCODE -ne 0) { throw "install.ps1 exited $LASTEXITCODE." }
 
@@ -215,8 +237,10 @@ Invoke-Step -Command "tlc" -Arguments @("harness", "install")
 
 Start-Step "agent-skills"
 
-Invoke-Step -Command "npx" `
-    -Arguments (@("-y", $manifest.AgentSkillsPackage, "install", "-s") + @($manifest.AgentSkills) + @("-a", "claude-code", "-g"))
+$skillArguments = @("-y", $manifest.AgentSkillsPackage, "install", "-s") + @($manifest.AgentSkills)
+
+if ($hasClaude) { Invoke-Step -Command "npx" -Arguments ($skillArguments + @("-a", "claude-code", "-g")) }
+if ($hasCursor) { Invoke-Step -Command "npx" -Arguments ($skillArguments + @("-a", "cursor", "-g")) }
 
 # ---------------------------------------------------------------------------
 # Plugins
@@ -234,19 +258,21 @@ $userSettingsPath = Join-Path $repoRoot (Join-Path "user" "settings.json")
 
 $installedPlugins = @{}
 
-try {
+if ($hasClaude) {
+    try {
 
-    $pluginJson = (& claude plugin list --json) -join "`n"
+        $pluginJson = (& claude plugin list --json) -join "`n"
 
-    if ($pluginJson) {
+        if ($pluginJson) {
 
-        foreach ($installed in (ConvertFrom-Json $pluginJson)) {
-            $installedPlugins[$installed.id] = [bool]$installed.enabled
+            foreach ($installed in (ConvertFrom-Json $pluginJson)) {
+                $installedPlugins[$installed.id] = [bool]$installed.enabled
+            }
         }
     }
-}
-catch {
-    $installedPlugins = @{}
+    catch {
+        $installedPlugins = @{}
+    }
 }
 
 $userSettings = Get-Content -LiteralPath $userSettingsPath -Raw | ConvertFrom-Json
@@ -257,7 +283,11 @@ if ($userSettings.enabledPlugins) {
     $declaredPlugins = @($userSettings.enabledPlugins.PSObject.Properties.Name | Where-Object { $_ })
 }
 
-if ($declaredPlugins.Count -eq 0) {
+if (-not $hasClaude) {
+    Write-Host "  --        skipped: plugins are installed into Claude Code, which is not installed"
+    $declaredPlugins = @()
+}
+elseif ($declaredPlugins.Count -eq 0) {
     Write-Host "  --        none declared"
 }
 
@@ -311,9 +341,38 @@ if (-not $SkipMcp) {
 
     Start-Step "MCP servers"
 
-    & (Join-Path $PSScriptRoot "install-mcp.ps1") -NoTitle -WhatIf:$WhatIfPreference
+    if ($hasClaude) {
+        & (Join-Path $PSScriptRoot "install-mcp.ps1") -NoTitle -WhatIf:$WhatIfPreference
 
-    if ($LASTEXITCODE -ne 0) { throw "install-mcp.ps1 exited $LASTEXITCODE." }
+        if ($LASTEXITCODE -ne 0) { throw "install-mcp.ps1 exited $LASTEXITCODE." }
+    }
+
+    if ($hasCursor) {
+
+        $cursorMcp = Join-Path $cursorDir "mcp.json"
+        $existing = ""
+        if (Test-Path -LiteralPath $cursorMcp) { $existing = [System.IO.File]::ReadAllText($cursorMcp) }
+
+        $catalogue = (Get-Content -LiteralPath (Join-Path $repoRoot (Join-Path "mcp" "servers.json")) -Raw | ConvertFrom-Json).mcpServers
+        $merge = Add-CursorMcpServer -ExistingJson $existing -Catalogue $catalogue
+
+        if ($merge.Added.Count -eq 0) {
+            Write-Status -Label "PRESENT" -Detail "Cursor mcp.json already lists every user server"
+        }
+        elseif ($WhatIfPreference -or (-not $PSCmdlet.ShouldProcess($cursorMcp, "Add MCP servers"))) {
+            Write-Status -Label "WHATIF" -Detail ("would add to Cursor mcp.json: " + ($merge.Added -join ", "))
+        }
+        else {
+            if ($existing) {
+                $backup = New-HarnessBackupRoot -ParentDirectory $cursorDir
+                New-Item -ItemType Directory -Path $backup -Force | Out-Null
+                Copy-Item -LiteralPath $cursorMcp -Destination (Join-Path $backup "mcp.json") -Force
+            }
+
+            [System.IO.File]::WriteAllText($cursorMcp, $merge.Json)
+            Write-Status -Label "INSTALL" -Detail ("Cursor mcp.json: " + ($merge.Added -join ", "))
+        }
+    }
 }
 
 # ---------------------------------------------------------------------------

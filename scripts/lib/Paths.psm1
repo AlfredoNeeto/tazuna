@@ -27,6 +27,26 @@ function Get-ClaudeConfigDir {
     return [System.IO.Path]::GetFullPath((Join-Path $HOME ".claude"))
 }
 
+function Get-CursorConfigDir {
+    <#
+        Cursor's user directory, ~/.cursor - where it reads skills, agents, rules,
+        hooks.json and mcp.json. Its existence is how the harness-toolkit and
+        agent-skills decide Cursor is installed, so it is how this harness does.
+
+        TAZUNA_CURSOR_DIR overrides it for the self-test; Cursor itself does not read it.
+    #>
+    [CmdletBinding()]
+    param()
+
+    $configured = $env:TAZUNA_CURSOR_DIR
+
+    if ($configured -and $configured.Trim() -ne "") {
+        return [System.IO.Path]::GetFullPath($configured.Trim())
+    }
+
+    return [System.IO.Path]::GetFullPath((Join-Path $HOME ".cursor"))
+}
+
 function Resolve-HarnessPath {
     <#
     .SYNOPSIS
@@ -153,6 +173,7 @@ function New-HarnessBackupRoot {
 
 Export-ModuleMember -Function @(
     "Get-ClaudeConfigDir",
+    "Get-CursorConfigDir",
     "Resolve-HarnessPath",
     "Get-ClaudeStateFile",
     "Get-CompatibleRelativePath",
