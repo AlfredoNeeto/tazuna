@@ -3931,7 +3931,8 @@ try {
         $run = Invoke-MascotRenderer -Root $root -Arguments @("-WhatIf")
         if ($run.Code -ne 0) { return "exited $($run.Code): $($run.Output)" }
         $expected = @(@($mascotKept | ForEach-Object { "docs/assets/tazuna/$_.svg" }) + @("docs/assets/banner.svg", "docs/assets/social-preview.png") | Sort-Object)
-        $named = @([regex]::Matches($run.Output, 'on target "([^"]+)"') | ForEach-Object { $_.Groups[1].Value } | Sort-Object)
+        # why: the -WhatIf sentence is localised ("on target", "no destino"); the quoted path is not.
+        $named = @([regex]::Matches($run.Output, '"(docs/[^"]+)"') | ForEach-Object { $_.Groups[1].Value } | Sort-Object)
         if (($named -join ",") -ne ($expected -join ",")) { return ("-WhatIf names: " + ($named -join ", ")) }
         $written = @(Get-RenderedOutput -Root $root)
         if ($written.Count -gt 0) { return ("-WhatIf wrote: " + (($written | ForEach-Object { $_.Name }) -join ", ")) }
