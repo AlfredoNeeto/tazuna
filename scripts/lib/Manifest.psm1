@@ -12,7 +12,7 @@ function Get-HarnessManifest {
         doctor and init cannot disagree about them.
     #>
     return [PSCustomObject]@{
-        Version            = "1.1.1"
+        Version            = "1.2.0"
         ToolkitPackage     = "@tech-leads-club/harness-toolkit@0.16.2"
         AgentSkillsPackage = "@tech-leads-club/agent-skills@1.4.10"
         AgentSkills        = @("tlc-discover", "tlc-spec-lean", "tlc-spec-driven", "tlc-plan", "tlc-implement", "harness-eval")

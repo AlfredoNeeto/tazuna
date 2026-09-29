@@ -2,8 +2,9 @@
   "$comment": "Project-scope MCP servers. `tazuna mcp add <name>` merges `server` into the project's .mcp.json and enables it in .claude/settings.json. Credentials only as ${ENV_VAR} placeholders.",
   "servers": {
     "azure-devops": {
-      "purpose": "On-premises Azure DevOps Server: pull requests, work items, wiki, search (PAT, API 7.0)",
+      "purpose": "On-premises Azure DevOps Server: pull requests, work items, wiki, search (PAT, API 7.0); asks for the project URL and a PAT, this project only",
       "requires": "npx",
+      "$scope": "Registered in Claude Code local scope by scripts/configure-ado.ps1, never merged into .mcp.json: it adds AZURE_DEVOPS_ORG_URL, AZURE_DEVOPS_PAT and AZURE_DEVOPS_DEFAULT_PROJECT per project.",
       "server": {
         "command": "npx",
         "args": [
@@ -11,9 +12,7 @@
           "@tiberriver256/mcp-server-azure-devops"
         ],
         "env": {
-          "AZURE_DEVOPS_ORG_URL": "${ADO_COLLECTION_URL}",
           "AZURE_DEVOPS_AUTH_METHOD": "pat",
-          "AZURE_DEVOPS_PAT": "${ADO_PAT}",
           "AZURE_DEVOPS_API_VERSION": "7.0"
         }
       }

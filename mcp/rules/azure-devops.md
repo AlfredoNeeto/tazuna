@@ -19,10 +19,12 @@ exist on it.
 A snippet copied from the cloud documentation that returns 404 or 400 here has usually not
 failed because of the code around it. Check the API version before debugging anything else.
 
-The MCP reads `${ADO_COLLECTION_URL}` and `${ADO_PAT}` from the user environment. If either is
-missing, do not guess a server address and do not ask for the token in chat: tell the user to
-run `tazuna mcp add azure-devops` again, which prompts for both, verifies them and stores them
-without echoing the token.
+The server is registered for this project only, in Claude Code's local scope, with the
+collection, the default project and the PAT taken from the project URL the user gave. If a call
+returns 401, or the collection or project is wrong, do not guess a server address and do not ask
+for the token in chat: tell the user to run `tazuna mcp add azure-devops` again in this project,
+which prompts for the project URL and a PAT, verifies them and replaces the registration without
+echoing the token.
 
 ## Pipelines
 

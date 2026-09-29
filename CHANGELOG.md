@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.2.0
+
+### Changed
+
+- `tazuna mcp add azure-devops` configures one project at a time. It asks for the project URL
+  as the browser shows it (`http://server/Collection/Project`), splits it into collection and
+  project, and checks both and the PAT against the server before anything is registered. The
+  server is registered with `claude mcp add -s local`, so each project keeps its own URL and
+  token, outside the repository. Running it again in the project replaces them.
+- `azure-devops` is no longer written to `.mcp.json`. The `${ADO_COLLECTION_URL}` and `${ADO_PAT}`
+  placeholders were expanded only from Claude Code's own process environment, which allowed one
+  value per machine, and a missing variable reached the server as literal text.
+- `ADO_COLLECTION_URL` and `ADO_PAT` are no longer written or read. Existing user variables are
+  left in place and can be deleted.
+
 ## 1.1.1
 
 ### Changed

@@ -16,7 +16,7 @@ that needs it, with one command.
 
 | Name | What it does | Needs | Trust boundary |
 |---|---|---|---|
-| `azure-devops` | on-premises Azure DevOps Server: PRs, work items, wiki, search | `ADO_COLLECTION_URL`, `ADO_PAT` - asked for on the first `add` | community server `@tiberriver256/mcp-server-azure-devops`; holds a PAT; API pinned to 7.0; 7.1 returned 400 on the server it was tested against |
+| `azure-devops` | on-premises Azure DevOps Server: PRs, work items, wiki, search | the project URL and a PAT, asked for on every `add` and verified before anything is registered | community server `@tiberriver256/mcp-server-azure-devops`; holds a PAT; API pinned to 7.0; 7.1 returned 400 on the server it was tested against |
 | `serena` | symbol navigation: callers, implementations, declarations | `uvx` | runs a language server locally; nothing leaves the machine |
 | `drawio` | open and edit diagrams in the draw.io editor | `node` | official `@drawio/mcp` from jgraph |
 | `plantuml` | render PlantUML | `node` | **the diagram source is sent to `PLANTUML_SERVER_URL`**, `https://www.plantuml.com/plantuml` unless you set that variable to an internal server |
@@ -25,6 +25,17 @@ that needs it, with one command.
 `add` merges the entry into the project's `.mcp.json`, enables it in `.claude/settings.json`,
 and never removes what is already there. Claude Code asks you to approve a project server the
 first time it starts in that project.
+
+`azure-devops` is the exception, because each project may talk to a different collection with a
+different token. `tazuna mcp add azure-devops` asks for the project URL as the browser shows it
+(`http://server/Collection/Project`), splits it into collection and project, checks both and the
+PAT against the server, and registers the server with `claude mcp add -s local`: the values live in
+`~/.claude.json` under that project's path, outside the repository, and nothing is written to
+`.mcp.json`. Run it again in the project to change the URL or rotate the PAT. Why not
+`${ADO_PAT}` in `.mcp.json`: Claude Code expands placeholders only from its own process
+environment, so that is one value per machine, and a missing variable reaches the server as the
+literal text. Versions before 1.2.0 stored `ADO_COLLECTION_URL` and `ADO_PAT` as user environment
+variables; nothing reads them any more, and they can be deleted.
 
 ## Adding a server to a catalog
 

@@ -236,8 +236,7 @@ if ($ruleStage) {
 # bin\ holds only the .cmd.
 #
 # User scope, no elevation, reversible from the same Environment Variables
-# dialog. configure-ado.ps1 already writes user environment variables, so this
-# is not a new kind of change to the machine.
+# dialog.
 $binDirectory = Join-Path $repoRoot "bin"
 $userPath = [Environment]::GetEnvironmentVariable("PATH", "User")
 

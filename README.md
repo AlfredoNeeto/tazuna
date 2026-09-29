@@ -4,7 +4,7 @@
 
 <h1>Tazuna</h1>
 
-[![version](https://img.shields.io/badge/version-1.1.1-bd2e37?style=flat-square&labelColor=0c0809)](CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-1.2.0-bd2e37?style=flat-square&labelColor=0c0809)](CHANGELOG.md)
 [![agent](https://img.shields.io/badge/agent-Claude%20Code%202.1.277%2B%20or%20Cursor-7f1721?style=flat-square&labelColor=0c0809)](#prerequisites)
 [![Windows PowerShell](https://img.shields.io/badge/Windows%20PowerShell-5.1-6a4716?style=flat-square&labelColor=0c0809)](#prerequisites)
 [![license](https://img.shields.io/badge/license-MIT-a5752a?style=flat-square&labelColor=0c0809)](LICENSE)
@@ -152,7 +152,7 @@ With `/tlc-spec-lean I want X`, the agent reads the code, asks you only about de
 
 | Name | For |
 |---|---|
-| `azure-devops` | pull requests, work items, wiki and search on an on-premises Azure DevOps Server; asks for the collection URL and a token once and stores them as user environment variables |
+| `azure-devops` | pull requests, work items, wiki and search on an on-premises Azure DevOps Server; asks for the project URL and a token, checks them, and keeps them for that project only |
 | `serena` | symbol navigation: callers, implementations, declarations; needs `uvx` |
 | `drawio` | editing diagrams in draw.io |
 | `plantuml` | rendering PlantUML; the diagram text goes to `PLANTUML_SERVER_URL`, the public `plantuml.com` if unset |

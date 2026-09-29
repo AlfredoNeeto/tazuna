@@ -7,9 +7,10 @@
     already there, and enables it in <project>\.claude\settings.json. Running it
     twice changes nothing.
 
-    azure-devops also needs ADO_COLLECTION_URL and ADO_PAT in the user
-    environment; when either is missing, configure-ado.ps1 asks for them before
-    any file is written. Its rule lands in .claude\rules\azure-devops.md.
+    azure-devops is the exception: configure-ado.ps1 asks for the project URL
+    and a PAT, verifies them, and registers the server in Claude Code's local
+    scope for this project only, before any file is written. It never enters
+    .mcp.json. Its rule lands in .claude\rules\azure-devops.md.
 
 .PARAMETER Action
     list or add.
@@ -107,28 +108,18 @@ if (-not (Test-Path -LiteralPath $projectRoot -PathType Container)) {
 }
 
 # Credentials first, so a cancelled prompt leaves the project untouched.
-if ($Name -eq "azure-devops") {
+$localScope = ($Name -eq "azure-devops")
 
-    # This process only: Claude Code started from this shell sees exactly this,
-    # so a variable stored after the shell opened counts as missing here too.
-    $missing = @("ADO_COLLECTION_URL", "ADO_PAT") | Where-Object {
-        -not [Environment]::GetEnvironmentVariable($_, "Process")
-    }
+if ($localScope) {
 
-    if (@($missing).Count -gt 0) {
+    if (-not $AdoConfigurator) { $AdoConfigurator = Join-Path $PSScriptRoot "configure-ado.ps1" }
 
-        Write-Host ""
-        Write-Host ("Missing " + (@($missing) -join " and ") + "; asking for them now.")
+    $global:LASTEXITCODE = 0
+    & $AdoConfigurator -Path $projectRoot -WhatIf:$WhatIfPreference
 
-        if (-not $AdoConfigurator) { $AdoConfigurator = Join-Path $PSScriptRoot "configure-ado.ps1" }
-
-        $global:LASTEXITCODE = 0
-        & $AdoConfigurator -WhatIf:$WhatIfPreference
-
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "Azure DevOps was not configured. Nothing was written."
-            exit 1
-        }
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Azure DevOps was not configured. Nothing was written."
+        exit 1
     }
 }
 
@@ -152,45 +143,51 @@ function Set-Member {
     else { Add-Member -InputObject $Object -MemberType NoteProperty -Name $Key -Value $Value }
 }
 
-$changed = $false
+# why: a local-scope registration always rewrites the entry, and it lives outside the project files.
+$changed = $localScope
 
-# .mcp.json
-$mcpPath = Join-Path $projectRoot ".mcp.json"
-$mcp = Read-JsonObject -File $mcpPath
+# why: a shared .mcp.json entry for azure-devops would need a per-machine ${ADO_PAT}; its registration above replaces it.
+if (-not $localScope) {
 
-if (-not $mcp.PSObject.Properties["mcpServers"]) { Set-Member $mcp "mcpServers" (New-Object PSObject) }
+    # .mcp.json
+    $mcpPath = Join-Path $projectRoot ".mcp.json"
+    $mcp = Read-JsonObject -File $mcpPath
 
-$current = $null
-if ($mcp.mcpServers.PSObject.Properties[$Name]) { $current = $mcp.mcpServers.$Name }
+    if (-not $mcp.PSObject.Properties["mcpServers"]) { Set-Member $mcp "mcpServers" (New-Object PSObject) }
 
-if ((Get-JsonCanonicalForm -Value $current) -ne (Get-JsonCanonicalForm -Value $entry.server)) {
+    $current = $null
+    if ($mcp.mcpServers.PSObject.Properties[$Name]) { $current = $mcp.mcpServers.$Name }
 
-    Set-Member $mcp.mcpServers $Name $entry.server
+    if ((Get-JsonCanonicalForm -Value $current) -ne (Get-JsonCanonicalForm -Value $entry.server)) {
 
-    if ($PSCmdlet.ShouldProcess($mcpPath, "Declare $Name")) {
-        Set-Utf8Content -Path $mcpPath -Value (($mcp | ConvertTo-Json -Depth 20) + "`n")
+        Set-Member $mcp.mcpServers $Name $entry.server
+
+        if ($PSCmdlet.ShouldProcess($mcpPath, "Declare $Name")) {
+            Set-Utf8Content -Path $mcpPath -Value (($mcp | ConvertTo-Json -Depth 20) + "`n")
+        }
+
+        $changed = $true
     }
 
-    $changed = $true
-}
+    # .claude/settings.json - declared but not enabled does nothing.
+    $settingsPath = Join-Path $projectRoot ".claude\settings.json"
+    $settings = Read-JsonObject -File $settingsPath
 
-# .claude/settings.json - declared but not enabled does nothing.
-$settingsPath = Join-Path $projectRoot ".claude\settings.json"
-$settings = Read-JsonObject -File $settingsPath
+    $enabled = @()
+    if ($settings.PSObject.Properties["enabledMcpjsonServers"]) { $enabled = @($settings.enabledMcpjsonServers) }
 
-$enabled = @()
-if ($settings.PSObject.Properties["enabledMcpjsonServers"]) { $enabled = @($settings.enabledMcpjsonServers) }
+    if ($enabled -notcontains $Name) {
 
-if ($enabled -notcontains $Name) {
+        Set-Member $settings "enabledMcpjsonServers" (@($enabled) + $Name)
 
-    Set-Member $settings "enabledMcpjsonServers" (@($enabled) + $Name)
+        if ($PSCmdlet.ShouldProcess($settingsPath, "Enable $Name")) {
+            New-Item -ItemType Directory -Path (Split-Path -Parent $settingsPath) -Force | Out-Null
+            Set-Utf8Content -Path $settingsPath -Value (($settings | ConvertTo-Json -Depth 20) + "`n")
+        }
 
-    if ($PSCmdlet.ShouldProcess($settingsPath, "Enable $Name")) {
-        New-Item -ItemType Directory -Path (Split-Path -Parent $settingsPath) -Force | Out-Null
-        Set-Utf8Content -Path $settingsPath -Value (($settings | ConvertTo-Json -Depth 20) + "`n")
+        $changed = $true
     }
 
-    $changed = $true
 }
 
 # The rule that goes with the server.
@@ -217,7 +214,9 @@ Write-Host ""
 
 if ($changed) {
     Write-Status -Label "ADDED" -Detail $Name
-    Write-Host "            restart Claude Code in this project and approve the server once"
+
+    if ($localScope) { Write-Host "            restart Claude Code in this project" }
+    else { Write-Host "            restart Claude Code in this project and approve the server once" }
 }
 else {
     Write-Status -Label "UNCHANGED" -Detail $Name
