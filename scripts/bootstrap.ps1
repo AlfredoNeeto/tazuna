@@ -194,8 +194,9 @@ if ($LASTEXITCODE -ne 0) { throw "install.ps1 exited $LASTEXITCODE." }
 # ---------------------------------------------------------------------------
 # Tech Leads Club: harness-toolkit and agent-skills
 # ---------------------------------------------------------------------------
-# Always after install.ps1: that replaces settings.json whole, and `tlc harness
-# install` is what merges the toolkit's hooks back into it. Both are idempotent.
+# After install.ps1, which merges settings.json and keeps the toolkit's hooks;
+# `tlc harness install` wires them on a new machine and repairs them on an old
+# one. Both are idempotent.
 
 function Invoke-Step {
     param([string]$Command, [string[]]$Arguments)

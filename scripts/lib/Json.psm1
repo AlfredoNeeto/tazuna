@@ -130,8 +130,41 @@ function Test-JsonContentEqual {
     return ((Get-JsonCanonicalForm -Value $reference) -eq (Get-JsonCanonicalForm -Value $difference))
 }
 
+function Merge-JsonTopLevel {
+    <#
+    .SYNOPSIS
+        The JSON object in LivePath with every top-level property of OverlayPath laid over it.
+    .DESCRIPTION
+        The overlay wins on the keys it has; every other key of the live object stays where it
+        was. With no live file the result is the overlay. A live file that does not parse throws.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$LivePath,
+        [Parameter(Mandatory = $true)][string]$OverlayPath
+    )
+
+    $overlay = Get-Content -LiteralPath $OverlayPath -Raw | ConvertFrom-Json
+
+    if (-not (Test-Path -LiteralPath $LivePath)) { return $overlay }
+
+    $live = Get-Content -LiteralPath $LivePath -Raw | ConvertFrom-Json
+
+    foreach ($property in $overlay.PSObject.Properties) {
+        if ($live.PSObject.Properties[$property.Name]) {
+            $live.PSObject.Properties[$property.Name].Value = $property.Value
+        }
+        else {
+            Add-Member -InputObject $live -MemberType NoteProperty -Name $property.Name -Value $property.Value
+        }
+    }
+
+    return $live
+}
+
 Export-ModuleMember -Function @(
     "Test-JsonFile",
     "Get-JsonCanonicalForm",
-    "Test-JsonContentEqual"
+    "Test-JsonContentEqual",
+    "Merge-JsonTopLevel"
 )

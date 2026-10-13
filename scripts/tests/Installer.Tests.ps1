@@ -51,6 +51,67 @@ try {
         return $true
     }
 
+    Test-Case -Name "ST1 install merges settings.json: shipped keys win, the toolkit hooks and the user's keys stay, an equal file is left alone" -Check {
+        # why: under -Only no earlier case has installed anything yet.
+        & (Join-Path $scriptsRoot "install.ps1") 6>$null | Out-Null
+        $settingsPath = Join-Path $scratch "settings.json"
+        $live = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
+        Add-Member -InputObject $live -MemberType NoteProperty -Name "hooks" -Value ([PSCustomObject]@{ Stop = @([PSCustomObject]@{ hooks = @([PSCustomObject]@{ type = "command"; command = "node tlc-exec.mjs stop" }) }) })
+        Add-Member -InputObject $live -MemberType NoteProperty -Name "modelSettings" -Value ([PSCustomObject]@{ kept = $true })
+        $live.permissions = [PSCustomObject]@{ allow = @("Bash(curl:*)") }
+        [System.IO.File]::WriteAllText($settingsPath, ($live | ConvertTo-Json -Depth 20))
+
+        $output = & (Join-Path $scriptsRoot "install.ps1") 6>&1 | Out-String
+        $merged = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
+        $shipped = Get-Content -LiteralPath (Join-Path $repoRoot "user\settings.json") -Raw | ConvertFrom-Json
+
+        if (-not $merged.PSObject.Properties["hooks"]) { return "the toolkit's hooks were dropped" }
+        if (-not $merged.PSObject.Properties["modelSettings"]) { return "the user's modelSettings was dropped" }
+        if ((Get-JsonCanonicalForm -Value $merged.permissions) -ne (Get-JsonCanonicalForm -Value $shipped.permissions)) { return "the shipped permissions did not replace the live ones" }
+        if ($output -notmatch "UPDATE\s+settings\.json") { return ("the changed file was not reported UPDATE: " + $output) }
+
+        # why: the toolkit rewrites the file in its own layout; the same content must not count as a change.
+        [System.IO.File]::WriteAllText($settingsPath, ($merged | ConvertTo-Json -Depth 20 -Compress))
+        $backupsBefore = @(Get-ChildItem -LiteralPath (Join-Path $scratch ".harness-backup") -Recurse -Filter "settings.json" -ErrorAction SilentlyContinue).Count
+
+        $again = & (Join-Path $scriptsRoot "install.ps1") 6>&1 | Out-String
+
+        if ($again -notmatch "UNCHANGED\s+settings\.json") { return ("an equal settings.json was not reported UNCHANGED: " + $again) }
+        $backupsAfter = @(Get-ChildItem -LiteralPath (Join-Path $scratch ".harness-backup") -Recurse -Filter "settings.json" -ErrorAction SilentlyContinue).Count
+        if ($backupsAfter -ne $backupsBefore) { return "an equal settings.json was backed up again" }
+        return $true
+    }
+
+    Test-Case -Name "ST2 install stops and writes nothing when the live settings.json does not parse" -Check {
+        & (Join-Path $scriptsRoot "install.ps1") 6>$null | Out-Null
+        $settingsPath = Join-Path $scratch "settings.json"
+        $claudeMd = Join-Path $scratch "CLAUDE.md"
+        $settingsBefore = [System.IO.File]::ReadAllText($settingsPath)
+        $claudeBefore = [System.IO.File]::ReadAllText($claudeMd)
+
+        # why: a removed CLAUDE.md that comes back would prove the install wrote something.
+        Remove-Item -LiteralPath $claudeMd -Force
+        [System.IO.File]::WriteAllText($settingsPath, "{ not json")
+
+        try {
+            $previous = $ErrorActionPreference
+            $ErrorActionPreference = "Continue"
+            $global:LASTEXITCODE = 0
+            $output = (& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $scriptsRoot "install.ps1") 2>&1 | Out-String)
+            $code = $LASTEXITCODE
+            $ErrorActionPreference = $previous
+
+            if ($code -ne 1) { return "exit $code, expected 1" }
+            if ([System.IO.File]::ReadAllText($settingsPath) -ne "{ not json") { return "the unreadable settings.json was overwritten" }
+            if (Test-Path -LiteralPath $claudeMd) { return "CLAUDE.md was installed although setup stopped" }
+            if ($output -notmatch "not valid JSON") { return ("no reason given: " + $output) }
+            return $true
+        }
+        finally {
+            [System.IO.File]::WriteAllText($settingsPath, $settingsBefore)
+            [System.IO.File]::WriteAllText($claudeMd, $claudeBefore)
+        }
+    }
     Test-Case -Name "install backs up before overwriting" -Check {
 
         $claudeMd = Join-Path $scratch "CLAUDE.md"

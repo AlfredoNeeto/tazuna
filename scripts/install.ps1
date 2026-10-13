@@ -17,10 +17,10 @@
     It never touches credentials, session state or machine-local files; it only
     writes the paths that exist under user/.
 
-    settings.json is replaced whole, which drops the hooks block the
-    harness-toolkit merges into it. bootstrap.ps1 therefore always runs
-    `tlc harness install` after this, and `tazuna doctor` fails when the
-    toolkit hook is missing.
+    settings.json is merged, not replaced: each top-level key user/settings.json
+    ships replaces the live one, and every other key stays - the hooks block the
+    harness-toolkit merges into it, and whatever the user set there. It is
+    compared as JSON, so a file the toolkit reformatted is UNCHANGED.
 
 .PARAMETER NoTitle
     Leave the title out. tazuna setup passes it, because it prints its own.
@@ -122,6 +122,25 @@ if ($invalid.Count -gt 0) {
     exit 1
 }
 
+# why: settings.json is merged before anything is written, so a live file that does not parse stops
+# the install with nothing changed, the same way an invalid source file does above.
+$settingsStage = $null
+
+if (-not $NoClaude) {
+
+    $liveSettings = Join-Path $target "settings.json"
+    $parseError = $null
+
+    if ((Test-Path -LiteralPath $liveSettings) -and (-not (Test-JsonFile -Path $liveSettings -ErrorMessage ([ref]$parseError)))) {
+        Write-Host "ERROR: $liveSettings is not valid JSON ($parseError); nothing was installed."
+        exit 1
+    }
+
+    $settingsStage = Join-Path ([System.IO.Path]::GetTempPath()) ("tazuna-settings-" + [guid]::NewGuid().ToString("N").Substring(0, 8) + ".json")
+    $merged = Merge-JsonTopLevel -LivePath $liveSettings -OverlayPath (Join-Path $source "settings.json")
+    [System.IO.File]::WriteAllText($settingsStage, ($merged | ConvertTo-Json -Depth 100), (New-Object System.Text.UTF8Encoding $false))
+}
+
 if ((-not $NoClaude) -and (-not (Test-Path -LiteralPath $target))) {
     # why: $WhatIfPreference before ShouldProcess, here and below - under -WhatIf
     # ShouldProcess prints its own "What if:" line, doubling the WHATIF one.
@@ -141,7 +160,9 @@ $installs = @()
 if (-not $NoClaude) {
     foreach ($file in $sourceFiles) {
         $relative = Get-CompatibleRelativePath -BasePath $source -TargetPath $file.FullName
-        $installs += [PSCustomObject]@{ Source = $file.FullName; Root = $target; Relative = $relative; Backup = $backupRoot; Label = $relative }
+        $from = $file.FullName
+        if ($relative -eq "settings.json") { $from = $settingsStage }
+        $installs += [PSCustomObject]@{ Source = $from; Root = $target; Relative = $relative; Backup = $backupRoot; Label = $relative }
     }
 }
 
@@ -186,12 +207,17 @@ foreach ($install in $installs) {
     # -WhatIf must be passed explicitly: PowerShell preference variables do not
     # cross the module boundary, so the module function would otherwise write
     # for real during a dry run.
-    $result = Copy-FileIfChanged `
-        -SourceFile $install.Source `
-        -TargetFile $targetFile `
-        -BackupRoot $install.Backup `
-        -BackupRelativePath $install.Relative `
-        -WhatIf:$WhatIfPreference
+    if (($install.Source -eq $settingsStage) -and (Test-JsonContentEqual -ReferenceFile $settingsStage -DifferenceFile $targetFile)) {
+        $result = "Unchanged"
+    }
+    else {
+        $result = Copy-FileIfChanged `
+            -SourceFile $install.Source `
+            -TargetFile $targetFile `
+            -BackupRoot $install.Backup `
+            -BackupRelativePath $install.Relative `
+            -WhatIf:$WhatIfPreference
+    }
 
     switch ($result) {
         "Created" {
@@ -221,6 +247,10 @@ foreach ($install in $installs) {
 
 if ($ruleStage) {
     Remove-Item -LiteralPath $ruleStage -Recurse -Force -WhatIf:$false
+}
+
+if ($settingsStage -and (Test-Path -LiteralPath $settingsStage)) {
+    Remove-Item -LiteralPath $settingsStage -Force -WhatIf:$false
 }
 
 # Put the harness on PATH, so `tazuna init` works from inside a project.

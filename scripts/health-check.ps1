@@ -239,8 +239,8 @@ if ($null -ne $claude) {
 
         if ([System.IO.Path]::GetExtension($Source) -eq ".json") {
 
-            # The harness-toolkit merges its own hooks block into settings.json;
-            # that is expected, not drift.
+            # why: setup merges settings.json, so only the keys the repository ships are compared; the
+            # harness-toolkit's hooks block and keys the user keeps there are expected, not drift.
             try {
                 $reference = Get-Content -LiteralPath $Source -Raw | ConvertFrom-Json
                 $difference = Get-Content -LiteralPath $Installed -Raw | ConvertFrom-Json
@@ -249,11 +249,12 @@ if ($null -ne $claude) {
                 return $false
             }
 
-            foreach ($document in @($reference, $difference)) {
-                if ($document.PSObject.Properties["hooks"]) { $document.PSObject.Properties.Remove("hooks") }
+            foreach ($property in $reference.PSObject.Properties) {
+                if (-not $difference.PSObject.Properties[$property.Name]) { return $false }
+                if ((Get-JsonCanonicalForm -Value $property.Value) -ne (Get-JsonCanonicalForm -Value $difference.PSObject.Properties[$property.Name].Value)) { return $false }
             }
 
-            return ((Get-JsonCanonicalForm -Value $reference) -eq (Get-JsonCanonicalForm -Value $difference))
+            return $true
         }
 
         return (Test-FileContentEqual -ReferenceFile $Source -DifferenceFile $Installed)
