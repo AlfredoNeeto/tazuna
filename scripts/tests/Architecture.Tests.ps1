@@ -127,7 +127,7 @@ try {
         $planted = @(Find-UnusedImport -Name "planted" -Exports $exports -Text "Import-Module (Join-Path `$PSScriptRoot `"lib\Git.psm1`") -Force`nWrite-Output 1")
         if ($planted -notcontains "planted imports Git without calling it") { return ("the planted unused import was reported as: " + ($planted -join "; ")) }
         $scripts = Get-ConsumerScript
-        if ($scripts.Count -ne 11) { return "scanned $($scripts.Count) scripts, expected 11" }
+        if ($scripts.Count -ne 12) { return "scanned $($scripts.Count) scripts, expected 12" }
         $violations = @()
         foreach ($script in $scripts) { $violations += @(Find-UnusedImport -Name $script.Name -Exports $exports -Text ([System.IO.File]::ReadAllText($script.FullName))) }
         if ($violations.Count -gt 0) { return ($violations -join "; ") }
@@ -139,7 +139,7 @@ try {
         $planted = @(Find-MissingImport -Name "planted" -Exports $exports -Text "Write-Status -Label OK -Detail x")
         if ($planted -notcontains "planted calls Write-Status without importing Console") { return ("the planted missing import was reported as: " + ($planted -join "; ")) }
         $scripts = Get-ConsumerScript
-        if ($scripts.Count -ne 11) { return "scanned $($scripts.Count) scripts, expected 11" }
+        if ($scripts.Count -ne 12) { return "scanned $($scripts.Count) scripts, expected 12" }
         $violations = @()
         foreach ($script in $scripts) { $violations += @(Find-MissingImport -Name $script.Name -Exports $exports -Text ([System.IO.File]::ReadAllText($script.FullName))) }
         if ($violations.Count -gt 0) { return ($violations -join "; ") }

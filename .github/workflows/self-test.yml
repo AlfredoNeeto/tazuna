@@ -21,3 +21,13 @@ jobs:
       - name: Self-test
         shell: powershell
         run: .\scripts\test-harness.ps1 -SkipSlow
+
+      # why: the exe is built where anyone with access to the run can download it; publishing a release stays the owner's decision.
+      - name: Build the installer
+        shell: powershell
+        run: .\scripts\build-installer.ps1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tazuna-setup
+          path: dist/tazuna-setup.exe

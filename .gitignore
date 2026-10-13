@@ -68,3 +68,6 @@ Thumbs.db
 # here: its PowerShell language server needs pwsh, and this repository targets
 # Windows PowerShell 5.1.
 .serena/
+
+# why: scripts\build-installer.ps1 writes tazuna-setup.exe here; CI keeps it as an artifact, git does not.
+dist/

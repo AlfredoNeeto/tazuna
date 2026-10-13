@@ -4,7 +4,7 @@
 
 <h1>Tazuna</h1>
 
-[![version](https://img.shields.io/badge/version-1.3.0-bd2e37?style=flat-square&labelColor=0c0809)](CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-1.4.0-bd2e37?style=flat-square&labelColor=0c0809)](CHANGELOG.md)
 [![agent](https://img.shields.io/badge/agent-Claude%20Code%202.1.296%2B%20or%20Cursor-7f1721?style=flat-square&labelColor=0c0809)](#prerequisites)
 [![Windows PowerShell](https://img.shields.io/badge/Windows%20PowerShell-5.1-6a4716?style=flat-square&labelColor=0c0809)](#prerequisites)
 [![license](https://img.shields.io/badge/license-MIT-a5752a?style=flat-square&labelColor=0c0809)](LICENSE)
@@ -64,7 +64,7 @@ Run this in your own terminal, outside Claude Code and Cursor:
 git clone https://github.com/AlfredoNeeto/tazuna.git "$HOME\tazuna"; & "$HOME\tazuna\bin\tazuna.cmd" setup
 ```
 
-`setup` adds `tazuna` to your user PATH. To use it in the same shell, run the line it prints:
+`tazuna-setup.exe` does the same with a double-click and keeps its window open until you press Enter. `scripts\build-installer.ps1` builds it and CI keeps it as the `tazuna-setup` artifact; it is not signed, so SmartScreen names an unknown publisher. `setup` adds `tazuna` to your user PATH. To use it in the same shell, run the line it prints:
 
 ```powershell
 $env:Path += ";$HOME\tazuna\bin"

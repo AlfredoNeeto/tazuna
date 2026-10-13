@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.4.0
+
+### Added
+
+- `scripts\build-installer.ps1` builds `tazuna-setup.exe` with the `csc.exe` of .NET Framework 4.
+  It runs the embedded `install.ps1` in its own console, returns its exit code and, when
+  double-clicked, waits for Enter before closing. It carries the mascot as its icon and asks for no
+  administrator rights. It is not signed, so SmartScreen names an unknown publisher. CI builds it
+  and keeps it as the `tazuna-setup` artifact.
+- In Windows Terminal, `tazuna setup` opens with the mascot beside its title, shows a progress bar
+  in each step header and ends on a summary panel. Plain output keeps its text.
+
 ## 1.3.0
 
 ### Added

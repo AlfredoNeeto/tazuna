@@ -732,7 +732,7 @@ Test-Case -Name "CI1 a GitHub Actions workflow runs the self-test with Windows P
     if (-not (Test-Path -LiteralPath $path)) { return "no .github\workflows\self-test.yml" }
     $text = [System.IO.File]::ReadAllText($path)
 
-    foreach ($required in @('(?m)^\s*push:', '(?m)^\s*pull_request:', '(?m)^\s*runs-on:\s*windows-latest\s*$', '(?m)^\s*shell:\s*powershell\s*$', 'scripts[\\/]test-harness\.ps1\s+-SkipSlow')) {
+    foreach ($required in @('(?m)^\s*push:', '(?m)^\s*pull_request:', '(?m)^\s*runs-on:\s*windows-latest\s*$', '(?m)^\s*shell:\s*powershell\s*$', 'scripts[\\/]test-harness\.ps1\s+-SkipSlow', 'scripts[\\/]build-installer\.ps1', '(?m)^\s*-?\s*uses:\s*actions/upload-artifact@v\d+', 'path:\s*dist/tazuna-setup\.exe')) {
         if ($text -notmatch $required) { return "the workflow does not match $required" }
     }
 
