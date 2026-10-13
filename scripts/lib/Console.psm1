@@ -50,7 +50,7 @@ function Get-StatusMeaning {
     switch -Regex ($Label) {
         "^(OK|PASS|PRESENT|UNCHANGED|DONE)$"      { return "Green" }
         "^(FAIL|MISSING|ERROR|DENIED)$"           { return "Red" }
-        "^(WARN|WHATIF|SKIP|PENDING)$"            { return "Yellow" }
+        "^(WARN|WHATIF|SKIP|PENDING|STALE)$"      { return "Yellow" }
         "^(INSTALL|CREATE|UPDATE|ADDED|BACKUP)$"  { return "Cyan" }
         "^(MCP|PLUGIN|TOOL|PROFILE|POINTER)$"     { return "Magenta" }
         default                                    { return "Gray" }
@@ -143,10 +143,105 @@ function Write-Section {
     Write-Line -Text ($rule * $Title.Length) -Colour DarkGray
 }
 
+function Test-RichConsole {
+    <#
+    .SYNOPSIS
+        Whether this run draws rich output, for a caller that writes a different ending in each mode.
+    #>
+    [CmdletBinding()]
+    param()
+
+    return $script:Rich
+}
+
+function Get-SpritePixels {
+    <#
+    .SYNOPSIS
+        A pixel-art source as rows of "#rrggbb" colours, $null where it is transparent.
+    .DESCRIPTION
+        The format docs/mascot.md defines: "<char> #rrggbb" palette lines, a "---" line, then
+        rows of palette characters with "." for transparent. Palette characters are
+        case-sensitive, so the lookup is a [char] dictionary, not a hashtable.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $palette = New-Object "System.Collections.Generic.Dictionary[char,string]"
+    $rows = New-Object System.Collections.Generic.List[object]
+    $inGrid = $false
+
+    foreach ($line in [System.IO.File]::ReadAllLines($Path)) {
+
+        if (-not $inGrid) {
+            if ($line -eq "---") { $inGrid = $true }
+            elseif ($line -match '^(\S) (#[0-9a-fA-F]{6})$') { $palette[[char]$Matches[1]] = $Matches[2] }
+            continue
+        }
+
+        $row = @()
+        foreach ($character in $line.ToCharArray()) {
+            if ($palette.ContainsKey($character)) { $row += $palette[$character] } else { $row += $null }
+        }
+        $rows.Add($row)
+    }
+
+    return , $rows.ToArray()
+}
+
+function Write-SpriteBeside {
+    <#
+        Draws the sprite two pixel rows per line: the upper half block takes the top pixel as
+        foreground and the bottom one as background, in 24-bit colour. Text[i], when present,
+        is written beside line i.
+    #>
+    param([object[]]$Grid, [hashtable]$Text)
+
+    $escape = [string][char]27
+    $upper = [string][char]0x2580
+    $lower = [string][char]0x2584
+
+    for ($y = 0; $y -lt $Grid.Count; $y += 2) {
+
+        $line = "  "
+
+        for ($x = 0; $x -lt $Grid[$y].Count; $x++) {
+
+            $top = $Grid[$y][$x]
+            $bottom = $null
+            if (($y + 1) -lt $Grid.Count) { $bottom = $Grid[$y + 1][$x] }
+
+            if ((-not $top) -and (-not $bottom)) { $line += "$escape[0m " }
+            elseif (-not $bottom) { $line += (Get-AnsiColour -Hex $top -Layer 38) + $upper + "$escape[0m" }
+            elseif (-not $top) { $line += (Get-AnsiColour -Hex $bottom -Layer 38) + $lower + "$escape[0m" }
+            else { $line += (Get-AnsiColour -Hex $top -Layer 38) + (Get-AnsiColour -Hex $bottom -Layer 48) + $upper + "$escape[0m" }
+        }
+
+        Write-Host $line -NoNewline
+
+        $row = $y / 2
+        if ($Text.ContainsKey($row)) { Write-Line -Text ("    " + $Text[$row].Text) -Colour $Text[$row].Colour }
+        else { Write-Host "" }
+    }
+}
+
+function Get-AnsiColour {
+    param([string]$Hex, [int]$Layer)
+
+    $red = [Convert]::ToInt32($Hex.Substring(1, 2), 16)
+    $green = [Convert]::ToInt32($Hex.Substring(3, 2), 16)
+    $blue = [Convert]::ToInt32($Hex.Substring(5, 2), 16)
+    return ("{0}[{1};2;{2};{3};{4}m" -f [char]27, $Layer, $red, $green, $blue)
+}
+
 function Write-Banner {
     <#
     .SYNOPSIS
         The title block a script opens with: "<Title> · <Command>".
+    .DESCRIPTION
+        Details are lines the caller wants under the title; plain output prints them exactly
+        as given. With -Sprite, rich output draws the mascot and writes the title, the tagline
+        and the details beside it, unless NO_COLOR asks for no colour at all. The tagline
+        exists only beside the art, so plain output keeps its lines.
     #>
     [CmdletBinding()]
     param(
@@ -155,10 +250,29 @@ function Write-Banner {
 
         [string]$Command = "",
 
-        [string]$Subtitle = ""
+        [string]$Subtitle = "",
+
+        [string[]]$Details = @(),
+
+        [string]$Sprite = "",
+
+        [string]$Tagline = ""
     )
 
     Write-Host ""
+
+    if ($script:Rich -and $Sprite -and (-not $env:NO_COLOR) -and (Test-Path -LiteralPath $Sprite)) {
+
+        if ($Command) { $Title = "{0} {1} {2}" -f $Title, [char]0x00B7, $Command }
+
+        $text = @{ 6 = @{ Text = $Title; Colour = "Cyan" } }
+        if ($Tagline) { $text[7] = @{ Text = $Tagline; Colour = "DarkGray" } }
+
+        for ($i = 0; $i -lt $Details.Count; $i++) { $text[9 + $i] = @{ Text = $Details[$i].Trim(); Colour = "Gray" } }
+
+        Write-SpriteBeside -Grid (Get-SpritePixels -Path $Sprite) -Text $text
+        return
+    }
 
     if (-not $script:Rich) {
 
@@ -182,6 +296,59 @@ function Write-Banner {
     }
 
     if ($Subtitle) { Write-Line -Text $Subtitle -Colour DarkGray }
+
+    foreach ($detail in $Details) { Write-Host $detail }
+}
+
+function Write-StepHeader {
+    <#
+    .SYNOPSIS
+        "[i/n] Title" under a rule in plain output; in rich output a bar of the steps done so far.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][int]$Index,
+        [Parameter(Mandatory = $true)][int]$Count,
+        [Parameter(Mandatory = $true)][string]$Title
+    )
+
+    if (-not $script:Rich) {
+        Write-Section ("[{0}/{1}] {2}" -f $Index, $Count, $Title)
+        return
+    }
+
+    Write-Host ""
+    Write-Line -Text ([string][char]0x2501 * (3 * $Index)) -Colour Cyan -NoNewline
+    Write-Line -Text ([string][char]0x2500 * (3 * ($Count - $Index))) -Colour DarkGray -NoNewline
+    Write-Line -Text ("  {0}/{1}  " -f $Index, $Count) -Colour DarkGray -NoNewline
+    Write-Line -Text $Title -Colour White
+}
+
+function Write-Panel {
+    <#
+    .SYNOPSIS
+        Lines inside a rounded box. Rich output only: a caller writes its plain ending itself.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string[]]$Lines,
+        [string]$Colour = "Green"
+    )
+
+    $width = ($Lines | ForEach-Object { $_.Length } | Measure-Object -Maximum).Maximum
+    $bar = [string][char]0x2500 * ($width + 4)
+    $side = [string][char]0x2502
+
+    Write-Host ""
+    Write-Line -Text ("  {0}{1}{2}" -f [char]0x256D, $bar, [char]0x256E) -Colour DarkGray
+
+    foreach ($line in $Lines) {
+        Write-Line -Text "  $side  " -Colour DarkGray -NoNewline
+        Write-Line -Text $line.PadRight($width) -Colour $Colour -NoNewline
+        Write-Line -Text "  $side" -Colour DarkGray
+    }
+
+    Write-Line -Text ("  {0}{1}{2}" -f [char]0x2570, $bar, [char]0x256F) -Colour DarkGray
 }
 
 Export-ModuleMember -Function @(
@@ -189,5 +356,9 @@ Export-ModuleMember -Function @(
     "Write-Status",
     "Write-Entry",
     "Write-Section",
-    "Write-Banner"
+    "Write-Banner",
+    "Write-StepHeader",
+    "Write-Panel",
+    "Test-RichConsole",
+    "Get-SpritePixels"
 )

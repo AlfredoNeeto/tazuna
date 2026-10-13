@@ -55,7 +55,7 @@ function Start-Step {
     param([string]$Name)
 
     $script:currentStep = $Name
-    Write-Section ("[{0}/{1}] {2}" -f ([array]::IndexOf($steps, $Name) + 1), $steps.Count, $Name)
+    Write-StepHeader -Index ([array]::IndexOf($steps, $Name) + 1) -Count $steps.Count -Title $Name
 }
 
 # invariant: a step that throws ends setup with one FAIL line naming the step
@@ -69,9 +69,9 @@ trap {
     exit 1
 }
 
-Write-Banner -Title ("Tazuna " + $manifest.Version) -Command "setup"
-Write-Host "  Repository:    $repoRoot"
-Write-Host "  Claude config: $(Get-ClaudeConfigDir)"
+Write-Banner -Title ("Tazuna " + $manifest.Version) -Command "setup" -Tagline "No turn ends on untested code." `
+    -Sprite (Join-Path $repoRoot "docs\assets\tazuna\src\icon-32.txt") `
+    -Details @("  Repository:    $repoRoot", "  Claude config: $(Get-ClaudeConfigDir)")
 
 # ---------------------------------------------------------------------------
 # Prerequisites
@@ -107,7 +107,7 @@ function Test-Prerequisite {
     }
     else {
 
-        Write-Host ("  --        {0} - {1} (optional)" -f $Command, $Purpose)
+        Write-Status -Label "--" -Detail ("{0} - {1} (optional)" -f $Command, $Purpose)
 
         if ($Install) {
             Write-Host ("            install: " + $Install)
@@ -124,10 +124,10 @@ $cursorDir = Get-CursorConfigDir
 $hasCursor = Test-Path -LiteralPath $cursorDir
 
 if ($hasClaude) { Write-Status -Label "OK" -Detail "claude - Claude Code" }
-else { Write-Host "  --        claude - Claude Code (not installed; its steps are skipped)" }
+else { Write-Status -Label "--" -Detail "claude - Claude Code (not installed; its steps are skipped)" }
 
 if ($hasCursor) { Write-Status -Label "OK" -Detail "Cursor - $cursorDir" }
-else { Write-Host "  --        Cursor - $cursorDir not found (its steps are skipped)" }
+else { Write-Status -Label "--" -Detail "Cursor - $cursorDir not found (its steps are skipped)" }
 
 if ((-not $hasClaude) -and (-not $hasCursor)) {
     Write-Host ""
@@ -310,11 +310,11 @@ if ($userSettings.enabledPlugins) {
 }
 
 if (-not $hasClaude) {
-    Write-Host "  --        skipped: plugins are installed into Claude Code, which is not installed"
+    Write-Status -Label "--" -Detail "skipped: plugins are installed into Claude Code, which is not installed"
     $declaredPlugins = @()
 }
 elseif ($declaredPlugins.Count -eq 0) {
-    Write-Host "  --        none declared"
+    Write-Status -Label "--" -Detail "none declared"
 }
 
 foreach ($declared in $declaredPlugins) {
@@ -424,7 +424,17 @@ $elapsed = "in {0}s" -f [int]$clock.Elapsed.TotalSeconds
 
 Write-Host ""
 
-if ($healthy) {
+if ($healthy -and (Test-RichConsole)) {
+    Write-Panel -Lines @(
+        ("Tazuna {0} - Harness installed {1}" -f $manifest.Version, $elapsed),
+        "",
+        "Connect a project - from inside it, no arguments:",
+        "  tazuna init",
+        "",
+        "Then see which MCP servers a project can add:",
+        "  tazuna mcp list")
+}
+elseif ($healthy) {
     Write-Status -Label "DONE" -Detail "Harness installed $elapsed"
 }
 else {
@@ -441,6 +451,9 @@ if (-not $callerHasBin) {
 Write-Host ""
 
 if (-not $healthy) { exit 1 }
+
+# why: the rich panel above already says all of this; plain output keeps its lines for logs.
+if (Test-RichConsole) { exit 0 }
 
 Write-Host "Connect a project - from inside it, no arguments:"
 Write-Host "  cd C:\src\MyApp"

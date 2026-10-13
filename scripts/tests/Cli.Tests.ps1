@@ -332,6 +332,101 @@ try {
     }
     $glyphs = @{ Green = [char]0x2714; Red = [char]0x2716; Yellow = [char]0x25B2; Other = [char]0x25CF }
 
+    Test-Case -Name "LK1 rich setup draws the mascot as 16 lines of 24-bit half blocks beside the title, tagline and paths" -Check {
+        $sprite = Join-Path $repoRoot "docs\assets\tazuna\src\icon-32.txt"
+        $saved = $env:NO_COLOR
+
+        try {
+            $env:NO_COLOR = $null
+            $records = Use-RichConsole -Rich $true -Block {
+                @(Write-Banner -Title "Tazuna $version" -Command "setup" -Tagline "No turn ends on untested code." -Details @("  Repository:    x") -Sprite $sprite 6>&1)
+            }
+        }
+        finally {
+            $env:NO_COLOR = $saved
+        }
+
+        $messages = @($records | ForEach-Object { $_.MessageData.Message })
+        $art = @($messages | Where-Object { $_.Contains([string][char]27 + "[38;2;") })
+        if ($art.Count -ne 16) { return "$($art.Count) lines of 24-bit art, expected 16 (32 sprite rows, two per line)" }
+        if (-not $art[0].Contains([string][char]0x2580)) { return "the art does not use half blocks" }
+        foreach ($text in @(("Tazuna $version " + [char]0x00B7 + " setup"), "No turn ends on untested code.", "Repository:    x")) {
+            if (@($messages | Where-Object { $_.Contains($text) }).Count -eq 0) { return "the banner does not show '$text'" }
+        }
+
+        $run = Invoke-HostCapture -Root (New-ScratchRoot) -Script (Join-Path $scriptsRoot "bootstrap.ps1") -Arguments @("-WhatIf") `
+            -Environment @{ WT_SESSION = "self-test"; TAZUNA_PLAIN = $null; NO_COLOR = $null } -OwnConsole
+        if ($run.Code -ne 0) { return "rich setup exited $($run.Code): $($run.Output)" }
+        if (-not $run.Output.Contains([string][char]27 + "[38;2;")) { return "rich setup drew no art" }
+        # why: a long scratch path wraps at the console width, so the line is matched by its start.
+        if (-not $run.Output.Contains("Repository:    ")) { return "rich setup does not show the repository" }
+        return $true
+    }
+    Test-Case -Name "LK2 NO_COLOR and plain output draw no 24-bit art, and plain keeps the title, the rule and the path lines as they were" -Check {
+        $noColour = Invoke-HostCapture -Root (New-ScratchRoot) -Script (Join-Path $scriptsRoot "bootstrap.ps1") -Arguments @("-WhatIf") `
+            -Environment @{ WT_SESSION = "self-test"; TAZUNA_PLAIN = $null; NO_COLOR = "1" } -OwnConsole
+        if ($noColour.Output.Contains([string][char]27 + "[38;2;")) { return "NO_COLOR still drew 24-bit colour" }
+
+        $plain = Invoke-HostCapture -Root (New-ScratchRoot) -Script (Join-Path $scriptsRoot "bootstrap.ps1") -Arguments @("-WhatIf") `
+            -Environment @{ WT_SESSION = "self-test"; TAZUNA_PLAIN = "1"; NO_COLOR = $null } -OwnConsole
+        $title = "Tazuna $version - setup"
+        $expected = @($title, ("=" * $title.Length), "  Repository:    ") -join "`r`n"
+        if (-not $plain.Output.Contains($expected)) { return ("plain setup no longer opens with: " + $expected) }
+        if ($plain.Output.Contains([string][char]27)) { return "plain setup wrote an escape sequence" }
+        return $true
+    }
+
+    Test-Case -Name "LK3 a step header is a bar of three cells per step, done ones heavy, in rich output, and [i/n] over a rule in plain" -Check {
+        $rich = Use-RichConsole -Rich $true -Block { (Get-HostText { Write-StepHeader -Index 2 -Count 5 -Title "Plugins" }).Text }
+        $expected = ([string][char]0x2501 * 6) + ([string][char]0x2500 * 9) + "  2/5  Plugins"
+        if ($rich -cne $expected) { return "rich: '$rich', expected '$expected'" }
+
+        $plain = Use-RichConsole -Rich $false -Block { (Get-HostText { Write-StepHeader -Index 2 -Count 5 -Title "Plugins" }).Text }
+        if ($plain -cne ("[2/5] Plugins" + ("-" * 13))) { return "plain: '$plain'" }
+        return $true
+    }
+
+    Test-Case -Name "LK4 a panel is a rounded box whose rows share one width" -Check {
+        $text = Use-RichConsole -Rich $true -Block { (Get-HostText { Write-Panel -Lines @("a", "", "longer line") }).Text }
+        $side = [string][char]0x2502
+        foreach ($piece in @(
+                ("  " + [char]0x256D + ([string][char]0x2500 * 15) + [char]0x256E),
+                ("  $side  " + "a".PadRight(11) + "  $side"),
+                ("  $side  " + "".PadRight(11) + "  $side"),
+                ("  $side  " + "longer line" + "  $side"),
+                ("  " + [char]0x2570 + ([string][char]0x2500 * 15) + [char]0x256F))) {
+            if (-not $text.Contains($piece)) { return "missing '$piece' in '$text'" }
+        }
+        return $true
+    }
+
+    Test-Case -Name "LK5 the sprite reader keeps upper- and lower-case palette characters apart and reads . as transparent" -Check {
+        $source = Join-Path $repoRoot "docs\assets\tazuna\src\icon-32.txt"
+        $grid = Get-SpritePixels -Path $source
+        $rows = @([System.IO.File]::ReadAllLines($source) | Select-Object -Skip ([array]::IndexOf([System.IO.File]::ReadAllLines($source), "---") + 1))
+        if ($grid.Count -ne 32) { return "$($grid.Count) rows, expected 32" }
+
+        $upper = $rows[3].IndexOf("K"); $lower = $rows[3].IndexOf("k"); $clear = $rows[3].IndexOf(".")
+        if ($grid[3][$upper] -ne "#0c0809") { return "K read as $($grid[3][$upper])" }
+        if ($grid[3][$lower] -ne "#1c1419") { return "k read as $($grid[3][$lower]), the colour of K is $($grid[3][$upper])" }
+        if ($null -ne $grid[3][$clear]) { return ". read as $($grid[3][$clear])" }
+        return $true
+    }
+
+    Test-Case -Name "LK6 a healthy rich setup ends on the panel; plain lines skipped prerequisites up in the label column" -Check {
+        $rich = Invoke-HostCapture -Root (New-ScratchRoot) -Script (Join-Path $scriptsRoot "bootstrap.ps1") `
+            -Environment @{ WT_SESSION = "self-test"; TAZUNA_PLAIN = $null; NO_COLOR = $null } -OwnConsole
+        if ($rich.Code -ne 0) { return "rich setup exited $($rich.Code): $($rich.Output)" }
+        foreach ($text in @(([string][char]0x256D), ("Tazuna $version - Harness installed in"), "tazuna init")) {
+            if (-not $rich.Output.Contains($text)) { return "the rich ending does not show '$text'" }
+        }
+        if ($rich.Output -match "DONE\s+Harness installed") { return "the rich ending still prints the plain DONE line" }
+
+        $plain = Get-SetupRun -Key "fresh"
+        if ($plain.Output -notmatch '(?m)^--\s{8}Cursor - .+ not found \(its steps are skipped\)') { return "the skipped Cursor line is not in the label column" }
+        if ($plain.Output -match '(?m)^  --') { return "a skipped prerequisite is still indented by hand" }
+        return $true
+    }
     Test-Case -Name "X17 rich output puts one glyph per meaning before the unchanged line" -Check {
         $wrong = Use-RichConsole -Rich $true -Block {
             foreach ($meaning in $labels.Keys) {
