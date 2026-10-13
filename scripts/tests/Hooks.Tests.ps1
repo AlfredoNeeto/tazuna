@@ -111,6 +111,104 @@ try {
         if ($code -eq 0) { return $true }
         return "exit $code, expected 0"
     }
+
+    function Invoke-HookCall {
+        # why: the exit code alone cannot tell deny from ask; the answer is on stdout and the refusal on stderr.
+        param([string]$Command, [switch]$Cursor)
+
+        $payload = @{ tool_name = "Bash"; cwd = $hookRepo; tool_input = @{ command = $Command } }
+        $arguments = @()
+
+        if ($Cursor) {
+            $payload = @{ command = $Command; cwd = $hookRepo; workspace_roots = @($hookRepo) }
+            $arguments = @("-Agent", "cursor")
+        }
+
+        $errorFile = [System.IO.Path]::GetTempFileName()
+        $previous = $ErrorActionPreference
+
+        try {
+            $ErrorActionPreference = "Continue"
+            $global:LASTEXITCODE = 0
+            $out = (($payload | ConvertTo-Json -Compress) | & powershell -NoProfile -ExecutionPolicy Bypass -File $hookScript @arguments 2> $errorFile | Out-String)
+            $code = $LASTEXITCODE
+        }
+        finally {
+            $ErrorActionPreference = $previous
+        }
+
+        $err = [System.IO.File]::ReadAllText($errorFile)
+        Remove-Item -LiteralPath $errorFile -Force -ErrorAction SilentlyContinue
+        return [PSCustomObject]@{ Code = $code; Out = $out.Trim(); Err = $err }
+    }
+
+    Test-Case -Name "G1 push is refused in every spelling, global options and compound commands included" -Check {
+        foreach ($command in @("git push", "git -C . push origin main", "git -c core.pager=less push", "git --git-dir=.git push", ('git status {0} git push' -f '&&'))) {
+            $call = Invoke-HookCall -Command $command
+            if (($call.Code -ne 2) -or ($call.Err -notmatch "Refusing to push")) { return "'$command': exit $($call.Code), stderr '$($call.Err.Trim())'" }
+        }
+        return $true
+    }
+
+    Test-Case -Name "G2 a destructive git command written with a global option is refused" -Check {
+        foreach ($command in @("git -C . reset --hard", "git -C . clean -fd", "git --git-dir=.git branch -D main")) {
+            $call = Invoke-HookCall -Command $command
+            if (($call.Code -ne 2) -or ($call.Err -notmatch "destructive")) { return "'$command': exit $($call.Code), stderr '$($call.Err.Trim())'" }
+        }
+        return $true
+    }
+
+    Test-Case -Name "G3 status, log --grep=push, stash push and a -C status pass untouched" -Check {
+        foreach ($command in @("git status", "git -C . status", "git log --grep=push", "git stash push", "git -C . diff")) {
+            $call = Invoke-HookCall -Command $command
+            if (($call.Code -ne 0) -or $call.Out -or $call.Err.Trim()) { return "'$command': exit $($call.Code), stdout '$($call.Out)', stderr '$($call.Err.Trim())'" }
+        }
+        return $true
+    }
+
+    Test-Case -Name "G4 a secret the same command stages is refused: git add then commit, and commit -am" -Check {
+        & git -C $hookRepo -c user.name=harness -c user.email=harness@example.invalid commit -q --allow-empty -m base
+        Set-Content -LiteralPath (Join-Path $hookRepo "Tracked.cs") -Value "class T { }" -NoNewline
+        & git -C $hookRepo add Tracked.cs
+        & git -C $hookRepo -c user.name=harness -c user.email=harness@example.invalid commit -q -m tracked
+
+        try {
+            Set-Content -LiteralPath (Join-Path $hookRepo ".env") -Value "TOKEN=abc" -NoNewline
+            $call = Invoke-HookCall -Command ('git add . {0} git commit -m wip' -f '&&')
+            if (($call.Code -ne 2) -or ($call.Err -notmatch "\.env")) { return "git add then commit with an untracked .env: exit $($call.Code), stderr '$($call.Err.Trim())'" }
+            Remove-Item -LiteralPath (Join-Path $hookRepo ".env") -Force
+
+            Set-Content -LiteralPath (Join-Path $hookRepo "Tracked.cs") -Value ("var key = `"AKIA" + "ABCDEFGHIJKLMNOP`";") -NoNewline
+            $call = Invoke-HookCall -Command "git commit -am wip"
+            if (($call.Code -ne 2) -or ($call.Err -notmatch "AWS access key")) { return "commit -am with a key in a tracked file: exit $($call.Code), stderr '$($call.Err.Trim())'" }
+
+            $call = Invoke-HookCall -Command "git commit -m wip"
+            if ($call.Code -ne 0) { return "a plain commit with nothing staged was refused: exit $($call.Code), stderr '$($call.Err.Trim())'" }
+        }
+        finally {
+            Remove-Item -LiteralPath (Join-Path $hookRepo ".env") -Force -ErrorAction SilentlyContinue
+            & git -C $hookRepo checkout -q -- Tracked.cs
+        }
+
+        return $true
+    }
+
+    Test-Case -Name "G5 a commit written with a global option asks instead of passing" -Check {
+        $call = Invoke-HookCall -Command "git -C . commit -m wip"
+        if ($call.Code -ne 0) { return "exit $($call.Code), stderr '$($call.Err.Trim())'" }
+        $answer = $call.Out | ConvertFrom-Json
+        if ($answer.hookSpecificOutput.permissionDecision -ne "ask") { return "stdout: $($call.Out)" }
+        return $true
+    }
+
+    Test-Case -Name "G6 under Cursor push is denied in its protocol and a commit with a global option asks" -Check {
+        $push = Invoke-HookCall -Command "git -C . push" -Cursor
+        if (($push.Code -ne 2) -or (($push.Out | ConvertFrom-Json).permission -ne "deny")) { return "push: exit $($push.Code), stdout $($push.Out)" }
+
+        $commit = Invoke-HookCall -Command "git -C . commit -m wip" -Cursor
+        if (($commit.Code -ne 0) -or (($commit.Out | ConvertFrom-Json).permission -ne "ask")) { return "commit: exit $($commit.Code), stdout $($commit.Out)" }
+        return $true
+    }
 }
 finally {
     if (Test-Path -LiteralPath $hookRepo) {
