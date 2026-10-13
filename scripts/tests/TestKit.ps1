@@ -190,6 +190,7 @@ if (($args[0] -eq "harness") -and ($args[1] -eq "install") -and ($env:HARNESS_ST
 
 if ($args[0] -eq "--version") { Write-Output "2.1.300 (Claude Code)" }
 elseif (($args[0] -eq "plugin") -and ($args[1] -eq "list")) { Write-Output "[]" }
+elseif (($args[0] -eq "plugin") -and ($args[1] -eq "install") -and ($env:HARNESS_STUB_FAIL -eq "claude-plugin-install")) { exit 1 }
 elseif (($args[0] -eq "mcp") -and ($args[1] -eq "list")) {
     if ($env:HARNESS_STUB_MCPLIST) { Write-Output $env:HARNESS_STUB_MCPLIST }
 }

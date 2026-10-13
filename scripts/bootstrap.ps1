@@ -351,12 +351,14 @@ foreach ($declared in $declaredPlugins) {
 
     & claude plugin install $declared --scope user | Out-Null
 
-    if ($LASTEXITCODE -eq 0) {
-        Write-Status -Label "INSTALL" -Detail $declared
+    # why: CLAUDE.md tells every session to use these plugins; a setup that ends DONE without one
+    # hides the gap until a session needs it. The marketplace add above is not checked: one that is
+    # already registered may exit non-zero, and the install says what is really missing.
+    if ($LASTEXITCODE -ne 0) {
+        throw "claude plugin install $declared exited $LASTEXITCODE."
     }
-    else {
-        Write-Status -Label "FAIL" -Detail "$declared (claude plugin install exited $LASTEXITCODE)"
-    }
+
+    Write-Status -Label "INSTALL" -Detail $declared
 }
 
 # ---------------------------------------------------------------------------

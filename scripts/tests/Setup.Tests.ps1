@@ -78,6 +78,12 @@ try {
         if (@($older.Calls | Where-Object { $_ -eq $install }).Count -ne 1) { return "an older toolkit was not brought to the pin" }
         return $true
     }
+    Test-Case -Name "ST4 a plugin that fails to install fails setup with exit 1 and names it" -Check {
+        $run = Get-SetupRun -Key "plugin-fails" -Environment @{ HARNESS_STUB_FAIL = "claude-plugin-install" }
+        if ($run.Code -ne 1) { return "exit $($run.Code), expected 1" }
+        if ($run.Output -notmatch "plugin install ponytail@ponytail exited 1") { return ("the failure does not name the plugin: " + $run.Output) }
+        return $true
+    }
     Test-Case -Name "C1 doctor fails naming each of the seven skills when absent" -Check {
         $run = Get-SetupRun -Key "fresh"
         $skills = @($manifest.AgentSkills) + "review-change"
