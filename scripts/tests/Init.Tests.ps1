@@ -415,8 +415,8 @@ try {
         foreach ($path in @("AGENTS.md", ".claude\settings.json", ".claude\scripts\verify.ps1")) {
             if (-not (Test-Path -LiteralPath (Join-Path $run.Project $path))) { return "$path missing" }
         }
-        foreach ($pair in @(@("AGENTS.md", "AGENTS.md"), @("dot-claude\settings.json", ".claude\settings.json"), @("dot-claude\scripts\verify.ps1", ".claude\scripts\verify.ps1"))) {
-            if (-not (Test-FileContentEqual -ReferenceFile (Join-Path $repoRoot ("templates\dotnet\" + $pair[0])) -DifferenceFile (Join-Path $run.Project $pair[1]))) {
+        foreach ($pair in @(@("dotnet\AGENTS.md", "AGENTS.md"), @("dotnet\dot-claude\settings.json", ".claude\settings.json"), @("_shared\dot-claude\scripts\verify.ps1", ".claude\scripts\verify.ps1"))) {
+            if (-not (Test-FileContentEqual -ReferenceFile (Join-Path $repoRoot ("templates\" + $pair[0])) -DifferenceFile (Join-Path $run.Project $pair[1]))) {
                 return "$($pair[1]) is not the dotnet one"
             }
         }
@@ -425,8 +425,8 @@ try {
 
     Test-Case -Name "C9 init with no recognised stack writes the generic template" -Check {
         $run = New-InitProject -Files @{ "notes.txt" = "hello" }
-        foreach ($pair in @(@("AGENTS.md", "AGENTS.md"), @("dot-claude\settings.json", ".claude\settings.json"), @("dot-claude\scripts\verify.ps1", ".claude\scripts\verify.ps1"))) {
-            if (-not (Test-FileContentEqual -ReferenceFile (Join-Path $repoRoot ("templates\generic\" + $pair[0])) -DifferenceFile (Join-Path $run.Project $pair[1]))) {
+        foreach ($pair in @(@("generic\AGENTS.md", "AGENTS.md"), @("generic\dot-claude\settings.json", ".claude\settings.json"), @("_shared\dot-claude\scripts\verify.ps1", ".claude\scripts\verify.ps1"))) {
+            if (-not (Test-FileContentEqual -ReferenceFile (Join-Path $repoRoot ("templates\" + $pair[0])) -DifferenceFile (Join-Path $run.Project $pair[1]))) {
                 return "$($pair[1]) is not the generic one"
             }
         }

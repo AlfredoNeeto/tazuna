@@ -295,6 +295,7 @@ Test-Case -Name "_shared carries the files common to every template" -Check {
 
     foreach ($required in @(
         "dot-claude\scripts\VerifyCommon.psm1",
+        "dot-claude\scripts\verify.ps1",
         "dot-claude\hooks\block-secret-commit.ps1",
         "dot-claude\hooks\record-session-baseline.ps1",
         "dot-claude\hooks\require-verification.ps1")) {
@@ -319,7 +320,7 @@ foreach ($template in (Get-ChildItem -LiteralPath (Join-Path $repoRoot "template
 
         $missing = @()
 
-        foreach ($required in @("AGENTS.md", "dot-claude\settings.json", "dot-claude\scripts\verify.ps1")) {
+        foreach ($required in @("AGENTS.md", "dot-claude\settings.json")) {
             if (-not (Test-Path -LiteralPath (Join-Path $template.FullName $required))) {
                 $missing += $required
             }
@@ -462,6 +463,10 @@ Test-Case -Name "the harness installs the shared content it ships" -Check {
         }
 
         $relative = ($segments -join [System.IO.Path]::DirectorySeparatorChar)
+
+        # why: verify.ps1 is the project's own; here it runs the self-test, which the next case asserts.
+        if ($relative -eq (Join-Path ".claude" (Join-Path "scripts" "verify.ps1"))) { continue }
+
         $mine = Join-Path $repoRoot $relative
 
         if (-not (Test-Path -LiteralPath $mine)) {

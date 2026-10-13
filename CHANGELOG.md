@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.5.0
+
+### Changed
+
+- One `verify.ps1`, shipped from `templates/_shared`, serves every project. It finds every .NET,
+  .NET Framework, Flutter, Dart, Node, Python, Go, Rust, Maven, Gradle and Make project in the
+  repository, at the root or below it, and runs each one's build, analysis and tests from its own
+  directory: `flutter analyze` and `flutter test`, the `typecheck`, `lint`, `build` and `test`
+  scripts with npm, pnpm, yarn or bun by lockfile, MSBuild and `vstest.console` for .NET Framework.
+  A workspace member and the `android/` build of a Flutter or React Native app are not verified twice.
+- A step whose tool is not installed is skipped by name instead of failing the run; a run that
+  skipped every step fails with `Nothing to verify`. A step that runs and fails still fails.
+- Detection and the step runner moved into `VerifyCommon.psm1`, which `tazuna init` keeps up to
+  date. A `verify.ps1` installed by an earlier version is the project's and is kept: delete it and
+  run `tazuna init` to switch to the new one. `-Target`, `-Configuration` and `-SkipRestore` now work
+  in every project and default to `Debug`, as the `dotnet` template always did.
+
 ## 1.4.0
 
 ### Added

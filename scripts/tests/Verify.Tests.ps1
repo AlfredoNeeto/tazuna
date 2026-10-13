@@ -505,8 +505,7 @@ try {
 
     Test-Case -Name "F11 every verify.ps1 records its pass through Invoke-Verification and none writes the state itself" -Check {
         $scripts = @(
-            (Join-Path $repoRoot "templates\generic\dot-claude\scripts\verify.ps1"),
-            (Join-Path $repoRoot "templates\dotnet\dot-claude\scripts\verify.ps1"),
+            (Join-Path $repoRoot "templates\_shared\dot-claude\scripts\verify.ps1"),
             (Join-Path $repoRoot ".claude\scripts\verify.ps1")
         )
 

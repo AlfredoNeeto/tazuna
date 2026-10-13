@@ -4,7 +4,7 @@
 
 <h1>Tazuna</h1>
 
-[![version](https://img.shields.io/badge/version-1.4.0-bd2e37?style=flat-square&labelColor=0c0809)](CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-1.5.0-bd2e37?style=flat-square&labelColor=0c0809)](CHANGELOG.md)
 [![agent](https://img.shields.io/badge/agent-Claude%20Code%202.1.296%2B%20or%20Cursor-7f1721?style=flat-square&labelColor=0c0809)](#prerequisites)
 [![Windows PowerShell](https://img.shields.io/badge/Windows%20PowerShell-5.1-6a4716?style=flat-square&labelColor=0c0809)](#prerequisites)
 [![license](https://img.shields.io/badge/license-MIT-a5752a?style=flat-square&labelColor=0c0809)](LICENSE)
@@ -79,7 +79,7 @@ cd C:\src\MyApi
 tazuna init
 ```
 
-`init` detects the stack (`dotnet` or `generic`) and writes `AGENTS.md` plus `.claude\` with the permissions, the three hooks, stack rules and `scripts\verify.ps1`, the project's build and tests. Cursor reads those files too, and `init` adds `.cursor/hooks.json` and the stack rules as `.cursor/rules/*.mdc` for it. It also trusts the workspace, since Claude Code silently ignores project hooks otherwise. It keeps a file you edited unless you pass `-Force`, except Tazuna's own hooks and `VerifyCommon.psm1`, which it brings up to date with a backup, and it stops with an error when the project's `settings.json` leaves the gate unwired. In `AGENTS.md`, write only what the code does not show, because every line there goes into every turn.
+`init` detects the stack (`dotnet` or `generic`) and writes `AGENTS.md` plus `.claude\` with the permissions, the three hooks, stack rules and `scripts\verify.ps1`, the project's build and tests: it finds every .NET, .NET Framework, Flutter, Dart, Node, Python, Go, Rust, Maven, Gradle or Make project in the repository, wherever it sits, and skips by name a step whose tool is not installed. Cursor reads those files too, and `init` adds `.cursor/hooks.json` and the stack rules as `.cursor/rules/*.mdc` for it. It also trusts the workspace, since Claude Code silently ignores project hooks otherwise. It keeps a file you edited unless you pass `-Force`, except Tazuna's own hooks and `VerifyCommon.psm1`, which it brings up to date with a backup, and it stops with an error when the project's `settings.json` leaves the gate unwired. In `AGENTS.md`, write only what the code does not show, because every line there goes into every turn.
 
 <p align="center"><img src="docs/assets/divider.svg" alt="Ornamental divider in gold, lit from the left" width="480"></p>
 
