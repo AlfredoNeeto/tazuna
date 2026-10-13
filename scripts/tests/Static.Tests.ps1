@@ -503,4 +503,25 @@ Test-Case -Name "the harness has its own project instructions" -Check {
 }
 
 
+Test-Case -Name "IF1 every Claude settings file Tazuna ships runs the git hook only for commit, push or a git global option" -Check {
+    $expected = @("Bash|Bash(*commit*)", "Bash|Bash(*push*)", "Bash|Bash(*git -*)", "PowerShell|PowerShell(*commit*)", "PowerShell|PowerShell(*push*)", "PowerShell|PowerShell(*git -*)")
+    $files = @(
+        (Join-Path $repoRoot "templates\generic\dot-claude\settings.json"),
+        (Join-Path $repoRoot "templates\dotnet\dot-claude\settings.json"),
+        (Join-Path $repoRoot ".claude\settings.json"))
+
+    foreach ($file in $files) {
+        $found = @()
+        foreach ($entry in @((Get-Content -LiteralPath $file -Raw | ConvertFrom-Json).hooks.PreToolUse)) {
+            foreach ($hook in @($entry.hooks)) {
+                if (($hook.args -join " ") -notmatch "block-secret-commit\.ps1") { continue }
+                # invariant: a registration without "if" would start PowerShell for every shell command again.
+                if (-not $hook.PSObject.Properties["if"]) { return "$file registers the git hook for every $($entry.matcher) call" }
+                $found += ($entry.matcher + "|" + $hook.if)
+            }
+        }
+        if ((@($found | Sort-Object) -join ",") -ne (@($expected | Sort-Object) -join ",")) { return "$file has: " + ($found -join ", ") }
+    }
+    return $true
+}
 Complete-TestFile

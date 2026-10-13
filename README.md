@@ -5,7 +5,7 @@
 <h1>Tazuna</h1>
 
 [![version](https://img.shields.io/badge/version-1.3.0-bd2e37?style=flat-square&labelColor=0c0809)](CHANGELOG.md)
-[![agent](https://img.shields.io/badge/agent-Claude%20Code%202.1.277%2B%20or%20Cursor-7f1721?style=flat-square&labelColor=0c0809)](#prerequisites)
+[![agent](https://img.shields.io/badge/agent-Claude%20Code%202.1.296%2B%20or%20Cursor-7f1721?style=flat-square&labelColor=0c0809)](#prerequisites)
 [![Windows PowerShell](https://img.shields.io/badge/Windows%20PowerShell-5.1-6a4716?style=flat-square&labelColor=0c0809)](#prerequisites)
 [![license](https://img.shields.io/badge/license-MIT-a5752a?style=flat-square&labelColor=0c0809)](LICENSE)
 
@@ -53,7 +53,7 @@ Tazuna itself is small. It installs the Tech Leads Club's `tlc-*` skills and `ha
 | Windows PowerShell 5.1 | everything | it ships with Windows |
 | Git | cloning and updating | `setup` stops and says so |
 | Node.js 24+ | the toolkit, the skills, the MCP servers | `setup` stops and prints `winget install OpenJS.NodeJS.LTS` |
-| Claude Code 2.1.277+, or Cursor | the agent; either one is enough. With Cursor, open it once before `setup` ([docs/cursor.md](docs/cursor.md)) | `setup` stops when neither is installed |
+| Claude Code 2.1.296+, or Cursor | the agent; either one is enough. With Cursor, open it once before `setup` ([docs/cursor.md](docs/cursor.md)) | `setup` stops when neither is installed |
 | `python3` | the validators of the `tlc-*` skills | a warning; the skills check the artifacts by reading them |
 
 ### Installation

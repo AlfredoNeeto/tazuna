@@ -84,10 +84,11 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "Bash|PowerShell",
+        "matcher": "Bash",
         "hooks": [
           {
             "type": "command",
+            "if": "Bash(*commit*)",
             "command": "powershell",
             "args": [
               "-NoProfile",
@@ -97,7 +98,82 @@
               "${CLAUDE_PROJECT_DIR}/.claude/hooks/block-secret-commit.ps1"
             ],
             "timeout": 20,
-            "statusMessage": "Checking staged changes for secrets"
+            "statusMessage": "Checking the git command"
+          },
+          {
+            "type": "command",
+            "if": "Bash(*push*)",
+            "command": "powershell",
+            "args": [
+              "-NoProfile",
+              "-ExecutionPolicy",
+              "Bypass",
+              "-File",
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/block-secret-commit.ps1"
+            ],
+            "timeout": 20,
+            "statusMessage": "Checking the git command"
+          },
+          {
+            "type": "command",
+            "if": "Bash(*git -*)",
+            "command": "powershell",
+            "args": [
+              "-NoProfile",
+              "-ExecutionPolicy",
+              "Bypass",
+              "-File",
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/block-secret-commit.ps1"
+            ],
+            "timeout": 20,
+            "statusMessage": "Checking the git command"
+          }
+        ]
+      },
+      {
+        "matcher": "PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "PowerShell(*commit*)",
+            "command": "powershell",
+            "args": [
+              "-NoProfile",
+              "-ExecutionPolicy",
+              "Bypass",
+              "-File",
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/block-secret-commit.ps1"
+            ],
+            "timeout": 20,
+            "statusMessage": "Checking the git command"
+          },
+          {
+            "type": "command",
+            "if": "PowerShell(*push*)",
+            "command": "powershell",
+            "args": [
+              "-NoProfile",
+              "-ExecutionPolicy",
+              "Bypass",
+              "-File",
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/block-secret-commit.ps1"
+            ],
+            "timeout": 20,
+            "statusMessage": "Checking the git command"
+          },
+          {
+            "type": "command",
+            "if": "PowerShell(*git -*)",
+            "command": "powershell",
+            "args": [
+              "-NoProfile",
+              "-ExecutionPolicy",
+              "Bypass",
+              "-File",
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/block-secret-commit.ps1"
+            ],
+            "timeout": 20,
+            "statusMessage": "Checking the git command"
           }
         ]
       }

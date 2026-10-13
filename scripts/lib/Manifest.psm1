@@ -20,8 +20,8 @@ function Get-HarnessManifest {
         AgentSkills        = @("tlc-discover", "tlc-spec-lean", "tlc-spec-driven", "tlc-plan", "tlc-implement", "harness-eval")
         # why: the harness-toolkit hooks, agent-skills and the npx MCP servers refuse node below 24.
         MinimumNodeMajor     = 24
-        # why: AGENTS.md support, which the project templates rely on, landed in this version.
-        MinimumClaudeVersion = "2.1.277"
+        # why: the version the hook "if" filter was proven on; AGENTS.md support landed earlier.
+        MinimumClaudeVersion = "2.1.296"
     }
 }
 

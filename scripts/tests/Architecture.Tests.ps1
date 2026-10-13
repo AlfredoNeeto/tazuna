@@ -156,10 +156,10 @@ try {
         return $true
     }
 
-    Test-Case -Name "A9 the manifest pins node 24 and Claude Code 2.1.277 as minimums" -Check {
+    Test-Case -Name "A9 the manifest pins node 24 and Claude Code 2.1.296 as minimums" -Check {
         $pins = Get-HarnessManifest
         if ($pins.MinimumNodeMajor -ne 24) { return "MinimumNodeMajor is '$($pins.MinimumNodeMajor)'" }
-        if ($pins.MinimumClaudeVersion -ne "2.1.277") { return "MinimumClaudeVersion is '$($pins.MinimumClaudeVersion)'" }
+        if ($pins.MinimumClaudeVersion -ne "2.1.296") { return "MinimumClaudeVersion is '$($pins.MinimumClaudeVersion)'" }
         return $true
     }
 
@@ -173,7 +173,7 @@ try {
     }
 
     Test-Case -Name "A11 health-check holds no literal Claude Code minimum" -Check {
-        if ([System.IO.File]::ReadAllText((Join-Path $scriptsRoot "health-check.ps1")).Contains("2.1.277")) { return "health-check.ps1 still holds 2.1.277" }
+        if ([System.IO.File]::ReadAllText((Join-Path $scriptsRoot "health-check.ps1")).Contains("2.1.296")) { return "health-check.ps1 holds the literal 2.1.296" }
         return $true
     }
 
