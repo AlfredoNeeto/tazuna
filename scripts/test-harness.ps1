@@ -71,7 +71,9 @@ function Get-ShardVerdict {
 
     foreach ($result in $Results) {
 
-        $summary = [regex]::Match([string]$result.Text, "SHARD RESULT: passed (\d+) failed (\d+) skipped (\d+)")
+        # why: the last result line is the shard's own; RightToLeft finds it first.
+        $summary = [regex]::Match([string]$result.Text, "SHARD RESULT: passed (\d+) failed (\d+) skipped (\d+)",
+            [System.Text.RegularExpressions.RegexOptions]::RightToLeft)
 
         if (-not $summary.Success) {
             $verdict.Broken += "shard $($result.Index) (exit $($result.ExitCode), no result)"
@@ -92,46 +94,57 @@ function Get-ShardVerdict {
     return $verdict
 }
 
+function Start-ShardProcess {
+    param([Parameter(Mandatory = $true)][string[]]$Arguments)
+
+    $output = Join-Path ([System.IO.Path]::GetTempPath()) ("harness-shard-" + [guid]::NewGuid().ToString("N").Substring(0, 8) + ".txt")
+
+    $process = Start-Process -FilePath "powershell" -ArgumentList $Arguments -NoNewWindow -PassThru `
+        -RedirectStandardOutput $output -RedirectStandardError ($output + ".err")
+
+    # hazard: Windows PowerShell 5.1 reports no ExitCode for a Start-Process object whose handle was never read.
+    $null = $process.Handle
+
+    return [PSCustomObject]@{ Process = $process; Output = $output }
+}
+
+function Receive-ShardResult {
+    # invariant: the exit code returned is the process's own; a shard read as exit 0 would pass whatever it did.
+    param([Parameter(Mandatory = $true)]$Started, [int]$Index)
+
+    $Started.Process.WaitForExit()
+
+    $text = ""
+    foreach ($file in @($Started.Output, ($Started.Output + ".err"))) {
+        if (Test-Path -LiteralPath $file) {
+            $text += [System.IO.File]::ReadAllText($file)
+            Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    return [PSCustomObject]@{ Index = $Index; Text = $text; ExitCode = $Started.Process.ExitCode }
+}
+
 if ((-not $Only) -and ($Shard -lt 0)) {
 
     Write-Host ""
     Write-Host "Harness Self-Test ($shardCount shards)"
     Write-Host "================="
 
-    $shards = @()
+    $started = @()
 
     for ($index = 0; $index -lt $shardCount; $index++) {
-
-        $output = Join-Path ([System.IO.Path]::GetTempPath()) ("harness-shard-" + [guid]::NewGuid().ToString("N").Substring(0, 8) + ".txt")
         $arguments = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$PSCommandPath`"", "-Shard", $index)
         if ($SkipSlow) { $arguments += "-SkipSlow" }
-
-        $process = Start-Process -FilePath "powershell" -ArgumentList $arguments -NoNewWindow -PassThru `
-            -RedirectStandardOutput $output -RedirectStandardError ($output + ".err")
-
-        # hazard: Windows PowerShell 5.1 reports no ExitCode for a Start-Process object whose handle was never read.
-        $null = $process.Handle
-
-        $shards += [PSCustomObject]@{ Index = $index; Process = $process; Output = $output }
+        $started += Start-ShardProcess -Arguments $arguments
     }
 
     $results = @()
 
-    foreach ($worker in $shards) {
-
-        $worker.Process.WaitForExit()
-
-        $text = ""
-        foreach ($file in @($worker.Output, ($worker.Output + ".err"))) {
-            if (Test-Path -LiteralPath $file) {
-                $text += [System.IO.File]::ReadAllText($file)
-                Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue
-            }
-        }
-
-        Write-Host $text.TrimEnd()
-
-        $results += [PSCustomObject]@{ Index = $worker.Index; Text = $text; ExitCode = $worker.Process.ExitCode }
+    for ($index = 0; $index -lt $shardCount; $index++) {
+        $result = Receive-ShardResult -Started $started[$index] -Index $index
+        Write-Host $result.Text.TrimEnd()
+        $results += $result
     }
 
     $verdict = Get-ShardVerdict -Results $results
@@ -2684,26 +2697,33 @@ try {
         return $true
     }
 
-    Test-Case -Name "F13 when git cannot list a work tree, the walk answers and git's error stays out of the output" -Check {
-        $root = New-SpeedProject -NoGit -Files @{ "App.cs" = "a"; "node_modules\p\i.js" = "x" }
-        [System.IO.File]::WriteAllText((Join-Path $root ".git"), "gitdir: " + (Join-Path $root "missing-gitdir"))
+    Test-Case -Name "F13 when git cannot list a work tree, or is not installed, the walk answers and git's error stays out of the output" -Check {
+        $broken = New-SpeedProject -NoGit -Files @{ "App.cs" = "a"; "node_modules\p\i.js" = "x" }
+        [System.IO.File]::WriteAllText((Join-Path $broken ".git"), "gitdir: " + (Join-Path $broken "missing-gitdir"))
+        $healthy = New-SpeedProject -Files @{ "App.cs" = "a"; "node_modules\p\i.js" = "x" }
 
         $module = Join-Path $sharedRoot "dot-claude\scripts\VerifyCommon.psm1"
-        $command = "Import-Module '$module' -Force; (Get-ProjectFile -ProjectRoot '$root') -join '|'"
-        $previous = $ErrorActionPreference
+        $noGit = (Join-Path $env:SystemRoot "System32") + ";" + (Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0")
 
-        try {
-            $ErrorActionPreference = "Continue"
-            $output = (& powershell -NoProfile -ExecutionPolicy Bypass -Command $command 2>&1 | Out-String)
-        }
-        finally {
-            $ErrorActionPreference = $previous
+        foreach ($scenario in @(@{ Name = "a .git pointing at a missing gitdir"; Root = $broken; Path = $env:PATH }, @{ Name = "no git on PATH"; Root = $healthy; Path = $noGit })) {
+
+            $command = "`$env:PATH = '$($scenario.Path)'; Import-Module '$module' -Force; (Get-ProjectFile -ProjectRoot '$($scenario.Root)') -join '|'"
+            $previous = $ErrorActionPreference
+
+            try {
+                $ErrorActionPreference = "Continue"
+                $output = (& powershell -NoProfile -ExecutionPolicy Bypass -Command $command 2>&1 | Out-String)
+            }
+            finally {
+                $ErrorActionPreference = $previous
+            }
+
+            if ($output -match "fatal|Exception") { return ("$($scenario.Name): an error reached the output: " + $output.Trim()) }
+            $files = @($output.Trim().Split("|"))
+            if ($files -notcontains "App.cs") { return ("$($scenario.Name): the walk did not answer: " + $output.Trim()) }
+            if (@($files | Where-Object { $_.StartsWith("node_modules") }).Count -gt 0) { return ("$($scenario.Name): the walk entered node_modules: " + $output.Trim()) }
         }
 
-        if ($output -match "fatal") { return ("git's error reached the output: " + $output.Trim()) }
-        $files = @($output.Trim().Split("|"))
-        if ($files -notcontains "App.cs") { return ("the walk did not answer: " + $output.Trim()) }
-        if (@($files | Where-Object { $_.StartsWith("node_modules") }).Count -gt 0) { return ("the walk entered node_modules: " + $output.Trim()) }
         return $true
     }
 
@@ -2713,11 +2733,11 @@ try {
         if (@(Get-ProjectFile -ProjectRoot $root) -notcontains "build\_build.csproj") { return "build\_build.csproj is not listed, so .NET discovery cannot see it" }
 
         $start = Get-SourceFingerprint -ProjectRoot $root
-        foreach ($state in @(".claude\state\last-verification.json", ".tlc\harness\state\handoff.json")) {
+        foreach ($state in @(".claude\state\last-verification.json", ".tlc\harness\state\handoff.json", ".harness-backup\20261013\settings.json")) {
             New-Item -ItemType Directory -Path (Split-Path -Parent (Join-Path $root $state)) -Force | Out-Null
             [System.IO.File]::WriteAllText((Join-Path $root $state), "{}")
         }
-        if ((Get-SourceFingerprint -ProjectRoot $root) -ne $start) { return "state under .claude\state or .tlc changed the fingerprint" }
+        if ((Get-SourceFingerprint -ProjectRoot $root) -ne $start) { return "state under .claude\state, .tlc or .harness-backup changed the fingerprint" }
 
         [System.IO.File]::WriteAllText((Join-Path $root "build\Build.cs"), "changed")
         if ((Get-SourceFingerprint -ProjectRoot $root) -eq $start) { return "editing the tracked build\Build.cs left the fingerprint unchanged" }
@@ -2743,6 +2763,17 @@ try {
             }
         }
 
+        return $true
+    }
+
+    Test-Case -Name "F17 a shard process that prints a clean result and then exits 5 is read with exit 5 and fails the run" -Check {
+        $started = Start-ShardProcess -Arguments @("-NoProfile", "-Command", "Write-Output 'SHARD RESULT: passed 1 failed 0 skipped 0'; exit 5")
+        $result = Receive-ShardResult -Started $started -Index 7
+
+        if ($result.ExitCode -ne 5) { return "read exit '$($result.ExitCode)', expected 5" }
+        if ($result.Text -notmatch "SHARD RESULT: passed 1 failed 0 skipped 0") { return ("read text: " + $result.Text) }
+        if (Test-Path -LiteralPath $started.Output) { return "the shard's output file was left behind" }
+        if ((Get-ShardVerdict -Results @($result)).Ok) { return "the verdict passed a shard that exited 5" }
         return $true
     }
 
@@ -3114,28 +3145,37 @@ try {
         return $true
     }
 
-    Test-Case -Name "C36 setup installs the skills from the pinned catalog 0.17.8, and no later command inherits the pin" -Check {
-        $run = Get-SetupRun -Key "fresh"
-        if ($run.Code -ne 0) { return "setup exited $($run.Code): $($run.Output)" }
+    Test-Case -Name "C36 setup installs the skills from the pinned catalog 0.17.8 and puts back the caller's SKILLS_CDN_REF" -Check {
+        foreach ($scenario in @(@{ Key = "fresh"; Before = "" }, @{ Key = "catalog-preset"; Before = "9.9.9" })) {
 
-        $calls = @($run.Calls)
-        $skillInstalls = 0
+            $environment = @{}
+            if ($scenario.Before) { $environment["SKILLS_CDN_REF"] = $scenario.Before }
 
-        for ($index = 0; $index -lt $calls.Count; $index++) {
+            $run = Get-SetupRun -Key $scenario.Key -Environment $environment
+            if ($run.Code -ne 0) { return "$($scenario.Key): setup exited $($run.Code): $($run.Output)" }
 
-            if (-not $calls[$index].StartsWith("npx ")) { continue }
+            $calls = @($run.Calls)
+            $skillInstalls = 0
+            $later = 0
 
-            # The literal the check names, so a changed pin fails here instead of following along.
-            $expected = "catalog "
-            if ($calls[$index].StartsWith("npx -y @tech-leads-club/agent-skills@1.4.10 ")) { $expected = "catalog 0.17.8"; $skillInstalls++ }
+            for ($index = 0; $index -lt $calls.Count; $index++) {
 
-            if ($calls[$index + 1] -ne $expected) { return ("'" + $calls[$index] + "' saw '" + $calls[$index + 1] + "', expected '" + $expected + "'") }
+                if (-not $calls[$index].StartsWith("npx ")) { continue }
+
+                # The literal the check names, so a changed pin fails here instead of following along.
+                $expected = "catalog " + $scenario.Before
+                if ($calls[$index].StartsWith("npx -y @tech-leads-club/agent-skills@1.4.10 ")) { $expected = "catalog 0.17.8"; $skillInstalls++ }
+                elseif ($skillInstalls -gt 0) { $later++ }
+
+                if ($calls[$index + 1] -ne $expected) { return ("$($scenario.Key): '" + $calls[$index] + "' saw '" + $calls[$index + 1] + "', expected '" + $expected + "'") }
+            }
+
+            if ($skillInstalls -eq 0) { return "$($scenario.Key): setup never ran the agent-skills install" }
+            if ($later -eq 0) { return "$($scenario.Key): no npx ran after the skills install, so the restore went unobserved" }
         }
 
-        if ($skillInstalls -eq 0) { return "setup never ran the agent-skills install" }
         return $true
     }
-
     Test-Case -Name "C1 doctor fails naming each of the seven skills when absent" -Check {
         $run = Get-SetupRun -Key "fresh"
         $skills = @($manifest.AgentSkills) + "review-change"
