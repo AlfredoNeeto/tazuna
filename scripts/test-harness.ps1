@@ -2974,6 +2974,7 @@ try {
             while ($true) {
                 $context = $listener.GetContext()
                 $path = [Uri]::UnescapeDataString($context.Request.Url.AbsolutePath)
+                if ($path -eq "/stop") { $context.Response.Close(); $listener.Stop(); break }
                 $status = 404
                 if ($context.Request.Headers["Authorization"] -ne $good) { $status = 401 }
                 elseif (($path -eq "/MOBILE/_apis/projects/MyProject") -or ($path -eq "/tfs/DefaultCollection/_apis/projects/My Project")) { $status = 200 }
@@ -5804,7 +5805,11 @@ try {
     }
 }
 finally {
-    if ($script:adoServer) { Remove-Job -Job $script:adoServer.Job -Force -ErrorAction SilentlyContinue }
+    if ($script:adoServer) {
+        # why: the job blocks in GetContext(), which Remove-Job cannot interrupt; it waited 120 s on every run.
+        try { $null = Invoke-WebRequest -Uri ($script:adoServer.Url + "/stop") -UseBasicParsing -TimeoutSec 5 } catch { }
+        Remove-Job -Job $script:adoServer.Job -Force -ErrorAction SilentlyContinue
+    }
 
     foreach ($root in $script:scratchRoots) {
         Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
