@@ -727,4 +727,17 @@ Test-Case -Name "warming runs the runtime that is actually registered" -Check {
 
 Write-Host ""
 
+Test-Case -Name "CI1 a GitHub Actions workflow runs the self-test with Windows PowerShell on windows-latest for every push and pull request" -Check {
+    $path = Join-Path $repoRoot ".github\workflows\self-test.yml"
+    if (-not (Test-Path -LiteralPath $path)) { return "no .github\workflows\self-test.yml" }
+    $text = [System.IO.File]::ReadAllText($path)
+
+    foreach ($required in @('(?m)^\s*push:', '(?m)^\s*pull_request:', '(?m)^\s*runs-on:\s*windows-latest\s*$', '(?m)^\s*shell:\s*powershell\s*$', 'scripts[\\/]test-harness\.ps1')) {
+        if ($text -notmatch $required) { return "the workflow does not match $required" }
+    }
+
+    # invariant: pwsh would prove nothing about Windows PowerShell 5.1, the version users run.
+    if ($text -match '(?m)^\s*shell:\s*pwsh') { return "the workflow runs a step under pwsh" }
+    return $true
+}
 Complete-TestFile

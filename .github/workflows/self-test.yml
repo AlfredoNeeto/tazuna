@@ -1,0 +1,23 @@
+name: self-test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  self-test:
+    # why: Windows PowerShell 5.1 is the target, and windows-latest ships it as `powershell`.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # why: some cases commit in scratch repositories and git refuses without an identity.
+      - name: Git identity
+        shell: powershell
+        run: |
+          git config --global user.name "tazuna-ci"
+          git config --global user.email "tazuna-ci@example.invalid"
+
+      - name: Self-test
+        shell: powershell
+        run: .\scripts\test-harness.ps1 -SkipSlow
