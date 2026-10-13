@@ -15,6 +15,8 @@ function Get-HarnessManifest {
         Version            = "1.2.0"
         ToolkitPackage     = "@tech-leads-club/harness-toolkit@0.16.2"
         AgentSkillsPackage = "@tech-leads-club/agent-skills@1.4.10"
+        # why: the version of @tech-leads-club/skills-catalog the CLI downloads; without it, the newest.
+        SkillsCatalog      = "0.17.8"
         AgentSkills        = @("tlc-discover", "tlc-spec-lean", "tlc-spec-driven", "tlc-plan", "tlc-implement", "harness-eval")
         # why: the harness-toolkit hooks, agent-skills and the npx MCP servers refuse node below 24.
         MinimumNodeMajor     = 24

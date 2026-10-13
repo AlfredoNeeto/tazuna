@@ -2856,6 +2856,8 @@ function New-StubBin {
         "uvx"    = ($record -f "uvx")
         "npx"    = ($record -f "npx") + @'
 
+Add-Content -LiteralPath $env:HARNESS_STUB_LOG -Value ("catalog " + $env:SKILLS_CDN_REF) -WhatIf:$false
+
 $names = @(); $take = $false
 foreach ($a in $args) {
     if ($a -eq "-s") { $take = $true; continue }
@@ -3008,6 +3010,28 @@ try {
         $missing = @((@($manifest.AgentSkills) + "review-change") | Where-Object {
                 -not (Test-Path -LiteralPath (Join-Path $run.Config "skills\$_\SKILL.md")) })
         if ($missing.Count -gt 0) { return ("missing after setup: " + ($missing -join ", ")) }
+        return $true
+    }
+
+    Test-Case -Name "C36 setup installs the skills from the pinned catalog 0.17.8, and no later command inherits the pin" -Check {
+        $run = Get-SetupRun -Key "fresh"
+        if ($run.Code -ne 0) { return "setup exited $($run.Code): $($run.Output)" }
+
+        $calls = @($run.Calls)
+        $skillInstalls = 0
+
+        for ($index = 0; $index -lt $calls.Count; $index++) {
+
+            if (-not $calls[$index].StartsWith("npx ")) { continue }
+
+            # The literal the check names, so a changed pin fails here instead of following along.
+            $expected = "catalog "
+            if ($calls[$index].StartsWith("npx -y @tech-leads-club/agent-skills@1.4.10 ")) { $expected = "catalog 0.17.8"; $skillInstalls++ }
+
+            if ($calls[$index + 1] -ne $expected) { return ("'" + $calls[$index] + "' saw '" + $calls[$index + 1] + "', expected '" + $expected + "'") }
+        }
+
+        if ($skillInstalls -eq 0) { return "setup never ran the agent-skills install" }
         return $true
     }
 

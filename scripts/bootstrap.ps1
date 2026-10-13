@@ -239,8 +239,18 @@ Start-Step "agent-skills"
 
 $skillArguments = @("-y", $manifest.AgentSkillsPackage, "install", "-s") + @($manifest.AgentSkills)
 
-if ($hasClaude) { Invoke-Step -Command "npx" -Arguments ($skillArguments + @("-a", "claude-code", "-g")) }
-if ($hasCursor) { Invoke-Step -Command "npx" -Arguments ($skillArguments + @("-a", "cursor", "-g")) }
+# why: the CLI ships no skills; it downloads the newest catalog unless SKILLS_CDN_REF names
+# one, so pinning the CLI alone let two setups a week apart install different skills.
+$previousCatalog = $env:SKILLS_CDN_REF
+$env:SKILLS_CDN_REF = $manifest.SkillsCatalog
+
+try {
+    if ($hasClaude) { Invoke-Step -Command "npx" -Arguments ($skillArguments + @("-a", "claude-code", "-g")) }
+    if ($hasCursor) { Invoke-Step -Command "npx" -Arguments ($skillArguments + @("-a", "cursor", "-g")) }
+}
+finally {
+    $env:SKILLS_CDN_REF = $previousCatalog
+}
 
 # ---------------------------------------------------------------------------
 # Plugins
