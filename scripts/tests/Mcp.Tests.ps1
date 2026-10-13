@@ -376,7 +376,8 @@ try {
 
     Test-Case -Name "C22 every credential-bearing value in the MCP catalogs is a placeholder" -Check {
         $placeholder = '^\$\{[A-Z_][A-Z0-9_]*(:-[^}]*)?\}$'
-        $plainLiterals = @("pat", "7.0")
+        # why: the skills catalog version is pinned in the manifest and read from there; a version is not a credential.
+        $plainLiterals = @("pat", "7.0", $manifest.SkillsCatalog)
         $problems = @()
 
         $user = (Get-Content -LiteralPath (Join-Path $repoRoot "mcp\servers.json") -Raw | ConvertFrom-Json).mcpServers
@@ -434,4 +435,22 @@ finally {
     Clear-ScratchRoot
 }
 
+Test-Case -Name "PN1 every npx package in both MCP catalogues names an exact version, and the skills server reads the pinned catalog" -Check {
+    $servers = @()
+    foreach ($property in (Get-Content -LiteralPath (Join-Path $repoRoot "mcp\servers.json") -Raw | ConvertFrom-Json).mcpServers.PSObject.Properties) { $servers += [PSCustomObject]@{ Name = $property.Name; Server = $property.Value } }
+    foreach ($property in (Get-Content -LiteralPath (Join-Path $repoRoot "mcp\catalog.json") -Raw | ConvertFrom-Json).servers.PSObject.Properties) { $servers += [PSCustomObject]@{ Name = $property.Name; Server = $property.Value.server } }
+
+    foreach ($entry in $servers) {
+        if ($entry.Server.PSObject.Properties["command"] -and ($entry.Server.command -eq "npx")) {
+            $package = @($entry.Server.args | Where-Object { -not $_.StartsWith("-") })[0]
+            # invariant: a package without an exact version is whatever npm serves that day; this one may hold a PAT.
+            if ($package -notmatch "^@?[^@]+@\d+\.\d+\.\d+$") { return "$($entry.Name) runs '$package' without an exact version" }
+        }
+        if (($entry.Server | ConvertTo-Json -Depth 10) -match "@latest") { return "$($entry.Name) still names @latest" }
+    }
+
+    $skills = @($servers | Where-Object { $_.Name -eq "agent-skills" })[0].Server
+    if ((-not $skills.PSObject.Properties["env"]) -or ($skills.env.SKILLS_CDN_REF -ne $manifest.SkillsCatalog)) { return "the agent-skills server does not run with SKILLS_CDN_REF=$($manifest.SkillsCatalog)" }
+    return $true
+}
 Complete-TestFile

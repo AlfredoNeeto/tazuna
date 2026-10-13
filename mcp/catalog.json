@@ -9,7 +9,7 @@
         "command": "npx",
         "args": [
           "-y",
-          "@tiberriver256/mcp-server-azure-devops"
+          "@tiberriver256/mcp-server-azure-devops@0.1.49"
         ],
         "env": {
           "AZURE_DEVOPS_AUTH_METHOD": "pat",

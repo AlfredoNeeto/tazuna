@@ -10,11 +10,11 @@
       "command": "npx",
       "args": [
         "-y",
-        "@playwright/mcp@latest",
+        "@playwright/mcp@0.0.83",
         "--isolated"
       ],
       "$install": "winget install OpenJS.NodeJS.LTS",
-      "$warm": "npx -y @playwright/mcp@latest --version",
+      "$warm": "npx -y @playwright/mcp@0.0.83 --version",
       "$why": "The browser as a sensor: open the app, click, fill forms, look at the result after a UI change. 25 tools in every session, all answered with ask by the permission model. --isolated keeps the browser profile in memory so a session does not accumulate cookies."
     },
     "agent-skills": {
@@ -23,6 +23,9 @@
         "-y",
         "@tech-leads-club/agent-skills-mcp@0.1.6"
       ],
+      "env": {
+        "SKILLS_CDN_REF": "0.17.8"
+      },
       "$install": "winget install OpenJS.NodeJS.LTS",
       "$warm": "npx -y -p @tech-leads-club/agent-skills-mcp@0.1.6 node -e 0",
       "$why": "Search and load any skill of the Tech Leads Club catalog on demand, without installing it: four read tools, progressive disclosure."
