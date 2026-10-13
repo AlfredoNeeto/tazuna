@@ -2786,10 +2786,12 @@ try {
         $first = Invoke-CountingVerify -Project $project
         if (($first.Code -ne 0) -or (-not $first.Ran)) { return ("first run: exit $($first.Code), ran=$($first.Ran): " + $first.Output) }
 
+        $recorded = (Get-Content -LiteralPath (Join-Path $project ".claude\state\last-verification.json") -Raw | ConvertFrom-Json).completedAt
+
         $second = Invoke-CountingVerify -Project $project
         if ($second.Code -ne 0) { return "second run: exit $($second.Code)" }
         if ($second.Ran) { return "the second run on unchanged sources ran the step again" }
-        if (($second.Output -notmatch "Unchanged since the run that passed at") -or ($second.Output -notmatch "VERIFICATION PASSED")) { return ("second run did not report the reused pass: " + $second.Output) }
+        if ((-not $second.Output.Contains("Unchanged since the run that passed at $recorded.")) -or ($second.Output -notmatch "VERIFICATION PASSED")) { return ("second run did not name the pass of $recorded" + ": " + $second.Output) }
 
         if (-not (Invoke-CountingVerify -Project $project -Arguments @("-Force")).Ran) { return "-Force did not run the step" }
 
@@ -2824,6 +2826,21 @@ try {
         return $true
     }
 
+    Test-Case -Name "F16 a state file that does not parse, or predates the cache, makes verify run the steps and pass" -Check {
+        $project = New-CountingProject
+        $stateFile = Join-Path $project ".claude\state\last-verification.json"
+
+        if (-not (Invoke-CountingVerify -Project $project).Ran) { return "the first run did not run the step" }
+
+        foreach ($state in @("not json {", '{ "fingerprint": "x", "testsRan": true, "completedAt": "2026-01-01" }')) {
+            [System.IO.File]::WriteAllText($stateFile, $state)
+            $run = Invoke-CountingVerify -Project $project
+            if (($run.Code -ne 0) -or (-not $run.Ran)) { return ("state '$state': exit $($run.Code), ran=$($run.Ran): " + $run.Output) }
+        }
+
+        return $true
+    }
+
     Test-Case -Name "F10 a pass with one set of arguments does not answer another" -Check {
         $project = New-SpeedProject -NoGit -Files @{ "App.txt" = "a" }
         $counter = Join-Path $project "..\$(Split-Path -Leaf $project).runs"
@@ -2841,7 +2858,8 @@ try {
     }
 
     Test-Case -Name "F12 the .NET verifier builds without a separate restore, passes --no-restore only with -SkipRestore, and reuses a pass per configuration" -Check {
-        $project = New-SpeedProject -NoGit -Files @{ "Modern.csproj" = '<Project Sdk="Microsoft.NET.Sdk" />' }
+        # why: a project under a gitignored directory proves discovery reads git's list; a walk would see two projects and stop.
+        $project = New-SpeedProject -Files @{ "Modern.csproj" = '<Project Sdk="Microsoft.NET.Sdk" />'; "generated\Other.csproj" = '<Project Sdk="Microsoft.NET.Sdk" />' } -Ignore @("generated/")
         & (Join-Path $PSScriptRoot "init-project.ps1") -Type dotnet -Path $project -NoTrust 6>$null | Out-Null
 
         $bin = Join-Path $project "..\$(Split-Path -Leaf $project)-bin"
