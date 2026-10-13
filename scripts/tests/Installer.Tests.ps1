@@ -1,0 +1,225 @@
+[CmdletBinding()]
+param([switch]$SkipSlow, [string]$Only)
+
+. (Join-Path $PSScriptRoot "TestKit.ps1")
+
+Start-Section "Installer"
+
+$scratch = Join-Path ([System.IO.Path]::GetTempPath()) ("harness-selftest-" + [guid]::NewGuid().ToString("N").Substring(0, 8))
+$previousConfigDir = $env:CLAUDE_CONFIG_DIR
+
+try {
+    $env:CLAUDE_CONFIG_DIR = $scratch
+
+    Test-Case -Name "install -WhatIf writes nothing" -Check {
+
+        & (Join-Path $scriptsRoot "install.ps1") -WhatIf 6>$null | Out-Null
+
+        if (-not (Test-Path -LiteralPath $scratch)) { return $true }
+        return "the configuration directory was created during a dry run"
+    }
+
+    Test-Case -Name "install creates the harness" -Check {
+
+        & (Join-Path $scriptsRoot "install.ps1") 6>$null | Out-Null
+
+        $missing = @()
+
+        foreach ($required in @("CLAUDE.md", "settings.json")) {
+            if (-not (Test-Path -LiteralPath (Join-Path $scratch $required))) {
+                $missing += $required
+            }
+        }
+
+        if ($missing.Count -eq 0) { return $true }
+        return ("missing after install: " + ($missing -join ", "))
+    }
+
+    Test-Case -Name "install is idempotent" -Check {
+
+        $output = & (Join-Path $scriptsRoot "install.ps1") 6>&1 | Out-String
+
+        # Match the summary counts, not the status labels: the word "Installed:"
+        # in the summary line contains "INSTALL" and made this check vacuous.
+        $summary = [regex]::Match($output, "Installed:\s*(\d+) created,\s*(\d+) updated")
+
+        if (-not $summary.Success) { return "could not read the installer summary" }
+        if ($summary.Groups[1].Value -ne "0") { return "a second run created $($summary.Groups[1].Value) file(s)" }
+        if ($summary.Groups[2].Value -ne "0") { return "a second run updated $($summary.Groups[2].Value) file(s)" }
+        if (Test-Path -LiteralPath (Join-Path $scratch ".harness-backup")) { return "a backup was taken with nothing to overwrite" }
+
+        return $true
+    }
+
+    Test-Case -Name "install backs up before overwriting" -Check {
+
+        $claudeMd = Join-Path $scratch "CLAUDE.md"
+        Set-Content -LiteralPath $claudeMd -Value "LOCAL EDIT" -NoNewline
+
+        & (Join-Path $scriptsRoot "install.ps1") 6>$null | Out-Null
+
+        $backup = Get-ChildItem -LiteralPath (Join-Path $scratch ".harness-backup") -Recurse -Filter "CLAUDE.md" -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+
+        if (-not $backup) { return "no backup was written" }
+        if ((Get-Content -LiteralPath $backup.FullName -Raw).Trim() -ne "LOCAL EDIT") { return "the backup does not hold the replaced content" }
+
+        return $true
+    }
+
+    Test-Case -Name "V5 install leaves skills and agents it does not ship where they are" -Check {
+
+        # why: 1.0.0 has no earlier public version to retire, so anything user/ does not ship is the user's own.
+        $theirs = @("skills\remember\SKILL.md", "agents\planner.md")
+        foreach ($relative in $theirs) {
+            $path = Join-Path $scratch $relative
+            New-Item -ItemType Directory -Path (Split-Path -Parent $path) -Force | Out-Null
+            Set-Content -LiteralPath $path -Value "---`ndescription: written by the user`n---`n"
+        }
+        $before = @{}
+        foreach ($relative in $theirs) { $before[$relative] = [System.IO.File]::ReadAllText((Join-Path $scratch $relative)) }
+
+        $output = & (Join-Path $scriptsRoot "install.ps1") 6>&1 | Out-String
+
+        foreach ($relative in $theirs) {
+            $path = Join-Path $scratch $relative
+            if (-not (Test-Path -LiteralPath $path)) { return "$relative was moved" }
+            if ([System.IO.File]::ReadAllText($path) -ne $before[$relative]) { return "$relative was changed" }
+            $backup = @(Get-ChildItem -LiteralPath (Join-Path $scratch ".harness-backup") -Recurse -File -ErrorAction SilentlyContinue |
+                Where-Object { $_.FullName.EndsWith("\" + $relative) })
+            if ($backup.Count -gt 0) { return "$relative was copied into the backup" }
+        }
+        if ($output -match "RETIRED|KEPT") { return "install still reports a retirement" }
+
+        $source = [System.IO.File]::ReadAllText((Join-Path $scriptsRoot "install.ps1"))
+        foreach ($token in @("Get-RetiredInstall", "RETIRED")) {
+            if ($source.Contains($token)) { return "install.ps1 still holds $token" }
+        }
+        $manifest = Import-Module (Join-Path $scriptsRoot "lib\Manifest.psm1") -Force -PassThru
+        $exported = @($manifest.ExportedFunctions.Keys | Sort-Object)
+        if (($exported -join ",") -ne "Get-HarnessManifest") { return ("Manifest.psm1 exports: " + ($exported -join ", ")) }
+        return $true
+    }
+
+    Test-Case -Name "health-check reports an orphaned skill" -Check {
+
+        # Drift is two-directional. install.ps1 copies but never removes, so a
+        # skill deleted from the repository stays installed and active while a
+        # one-directional check reports everything matching.
+        & (Join-Path $scriptsRoot "install.ps1") 6>$null | Out-Null
+
+        $orphan = Join-Path $scratch (Join-Path "skills" "selftest-orphan-probe")
+        New-Item -ItemType Directory -Path $orphan -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $orphan "SKILL.md") -Value "---`ndescription: probe`n---`n" -NoNewline
+
+        $output = & (Join-Path $scriptsRoot "health-check.ps1") 6>&1 | Out-String
+
+        Remove-Item -LiteralPath $orphan -Recurse -Force -ErrorAction SilentlyContinue
+
+        if ($output -match "selftest-orphan-probe") { return $true }
+        return "an orphaned skill was not reported"
+    }
+
+    Test-Case -Name "health-check fails on invalid settings" -Check {
+
+        Set-Content -LiteralPath (Join-Path $scratch "settings.json") -Value "{ not json" -NoNewline
+
+        & (Join-Path $scriptsRoot "health-check.ps1") 6>$null | Out-Null
+
+        if ($LASTEXITCODE -ne 0) { return $true }
+        return "health-check passed with unparseable settings.json"
+    }
+}
+finally {
+    $env:CLAUDE_CONFIG_DIR = $previousConfigDir
+
+    if (Test-Path -LiteralPath $scratch) {
+        Remove-Item -LiteralPath $scratch -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+Test-Case -Name "health-check blames the missing runtime, not the network" -Check {
+
+    # Reported from a second machine: serena registered fine with no uvx
+    # installed, and the check said "network, or the service is down". That sent
+    # someone to look at their connection for a server that had nothing to run.
+    #
+    # Reproduced by taking uv off PATH for this run only - surgically, so claude
+    # and git stay reachable and the rest of the check still works.
+    $catalogue = Get-Content -LiteralPath (Join-Path $repoRoot "mcp\servers.json") -Raw | ConvertFrom-Json
+
+    $claude = Get-Command claude -ErrorAction SilentlyContinue
+
+    if (-not $claude) { return "claude is not on PATH, so this cannot be probed" }
+
+    $claudeDirectory = (Split-Path -Parent $claude.Source).TrimEnd("\")
+
+    # Pick a server whose runtime does NOT live beside claude.exe. The first
+    # version of this took uv off PATH, and uv shares a directory with claude
+    # here - so the whole check degraded, every server reported "not registered"
+    # and the case passed without ever reaching the branch it claims to test.
+    $candidate = $null
+
+    foreach ($property in $catalogue.mcpServers.PSObject.Properties) {
+
+        if (-not $property.Value.command) { continue }
+
+        $located = Get-Command $property.Value.command -ErrorAction SilentlyContinue
+
+        if (-not $located) { continue }
+
+        if ((Split-Path -Parent $located.Source).TrimEnd("\") -eq $claudeDirectory) { continue }
+
+        $candidate = [PSCustomObject]@{
+            Server    = $property.Name
+            Command   = $property.Value.command
+            Directory = (Split-Path -Parent $located.Source)
+        }
+
+        break
+    }
+
+    if (-not $candidate) {
+        return "no catalogued stdio runtime could be hidden without also hiding claude"
+    }
+
+    $previousPath = $env:PATH
+
+    try {
+
+        $env:PATH = (($env:PATH -split ";") |
+            Where-Object { $_ -and ($_.TrimEnd("\") -ne $candidate.Directory.TrimEnd("\")) }) -join ";"
+
+        if (Get-Command $candidate.Command -ErrorAction SilentlyContinue) {
+            return "could not take $($candidate.Command) off PATH, so this would prove nothing"
+        }
+
+        if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
+            return "hiding $($candidate.Command) also hid claude, so this would prove nothing"
+        }
+
+        $output = & (Join-Path $scriptsRoot "health-check.ps1") 6>&1 | Out-String
+    }
+    finally {
+        $env:PATH = $previousPath
+    }
+
+    # No escape hatch. If the scenario did not reproduce, that is a failure to
+    # investigate, not a pass.
+    if ($output -match "$($candidate.Server) is declared but not registered") {
+        return "the probe degraded the check instead of reproducing the scenario"
+    }
+
+    if ($output -notmatch "cannot start: '$($candidate.Command)' is not in PATH") {
+        return "it did not name the missing runtime: $($candidate.Command)"
+    }
+
+    if ($output -match "$($candidate.Server) is registered but did not connect") {
+        return "it still blamed the network for a missing runtime"
+    }
+
+    return $true
+}
+
+
+Complete-TestFile
