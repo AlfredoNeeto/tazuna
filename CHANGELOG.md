@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.3.0
+
+### Changed
+
+- The verification gate lists the project's files with `git ls-files`, so it no longer walks
+  `node_modules`, `bin` or `obj`. On a 34,520-file checkout the fingerprint behind the Stop hook
+  went from 11.6 s to 0.2 s. Outside git it walks the tree without entering those directories.
+- `verify.ps1` reports the last pass instead of repeating it while the sources, the tests and the
+  arguments are the same; `-Force` runs it again. The header, `git diff --check`, the recorded state
+  and the banner moved into `Invoke-Verification` in `VerifyCommon.psm1`, so each `verify.ps1`
+  holds only its own steps. `tazuna init` reports the new module as differing in an existing
+  project; `tazuna init -Force` replaces it and keeps a backup of what it replaces.
+- The .NET verifier finds solutions and projects in that same listing and lets `dotnet build`
+  restore, instead of running `dotnet restore` first.
+- The self-test runs its sections in four parallel processes: about 50 s instead of 250 s.
+
+### Fixed
+
+- `tazuna setup` pins the skills catalog at 0.17.8 through `SKILLS_CDN_REF`. The agent-skills
+  CLI downloads the newest catalog otherwise, so the pinned CLI still installed whatever skills
+  were current that day.
+- The self-test no longer waits 120 s for its Azure DevOps stub server to stop.
+
 ## 1.2.0
 
 ### Changed

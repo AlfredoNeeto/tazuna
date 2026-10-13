@@ -10,7 +10,8 @@ repeated here: read the code.
 ```
 
 Runs this project's build and test steps and checks the diff for whitespace damage. Prints
-`VERIFICATION PASSED` or `VERIFICATION FAILED` and exits non-zero on failure.
+`VERIFICATION PASSED` or `VERIFICATION FAILED` and exits non-zero on failure. On sources that already
+passed it reports that pass at once; `-Force` runs it again.
 
 A task is not complete while it fails. If it fails for reasons unrelated to your change, name
 the failures rather than working around them. Never weaken a test, suppress a warning, or

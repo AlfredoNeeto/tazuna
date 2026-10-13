@@ -10,11 +10,11 @@ repeated here: read the code.
 .\.claude\scripts\verify.ps1 -Configuration Release
 .\.claude\scripts\verify.ps1 -Target .\src\MyApi\MyApi.csproj
 .\.claude\scripts\verify.ps1 -SkipTests      # only for a deliberately build-only change
+.\.claude\scripts\verify.ps1 -Force          # repeat a pass the unchanged sources already have
 ```
 
-Discovers the solution or project, restores, builds, runs the tests, and checks the diff for
-whitespace damage. Prints `VERIFICATION PASSED` or `VERIFICATION FAILED` and exits non-zero on
-failure.
+Discovers the solution or project, builds, runs the tests, and checks the diff for whitespace
+damage. Prints `VERIFICATION PASSED` or `VERIFICATION FAILED` and exits non-zero on failure.
 
 It picks its own toolchain: the dotnet CLI for SDK-style projects, and Visual Studio's MSBuild
 with `vstest.console` when the repository contains a .NET Framework project, which the dotnet

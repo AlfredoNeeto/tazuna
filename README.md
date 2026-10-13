@@ -4,7 +4,7 @@
 
 <h1>Tazuna</h1>
 
-[![version](https://img.shields.io/badge/version-1.2.0-bd2e37?style=flat-square&labelColor=0c0809)](CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-1.3.0-bd2e37?style=flat-square&labelColor=0c0809)](CHANGELOG.md)
 [![agent](https://img.shields.io/badge/agent-Claude%20Code%202.1.277%2B%20or%20Cursor-7f1721?style=flat-square&labelColor=0c0809)](#prerequisites)
 [![Windows PowerShell](https://img.shields.io/badge/Windows%20PowerShell-5.1-6a4716?style=flat-square&labelColor=0c0809)](#prerequisites)
 [![license](https://img.shields.io/badge/license-MIT-a5752a?style=flat-square&labelColor=0c0809)](LICENSE)
@@ -70,7 +70,7 @@ git clone https://github.com/AlfredoNeeto/tazuna.git "$HOME\tazuna"; & "$HOME\ta
 $env:Path += ";$HOME\tazuna\bin"
 ```
 
-`setup` installs `harness-toolkit` 0.16.2 and runs `tlc harness install`, installs the `tlc-*` and `harness-eval` skills and the user MCP servers, then runs `tazuna doctor`. Running it again repairs a machine that drifted. For Claude Code it also copies `user/` into `~/.claude` and adds the `ponytail` plugin. It replaces `~/.claude/settings.json` and `~/.claude/CLAUDE.md` with Tazuna's and keeps a backup of yours in `~/.claude\.harness-backup\`; those settings switch off the claude.ai connectors and sync (`disableClaudeAiConnectors`). For Cursor it puts the skills, the instructions as a rule, the toolkit hooks and the servers under `~/.cursor`, and with both installed it equips both. Run `setup` and `update` outside the agent, and call `bin\tazuna.cmd` rather than the `.ps1`, which an `AllSigned` execution policy blocks.
+`setup` installs `harness-toolkit` 0.16.2 and runs `tlc harness install`, installs the `tlc-*` and `harness-eval` skills from the pinned skills catalog 0.17.8 and the user MCP servers, then runs `tazuna doctor`. Running it again repairs a machine that drifted. For Claude Code it also copies `user/` into `~/.claude` and adds the `ponytail` plugin. It replaces `~/.claude/settings.json` and `~/.claude/CLAUDE.md` with Tazuna's and keeps a backup of yours in `~/.claude\.harness-backup\`; those settings switch off the claude.ai connectors and sync (`disableClaudeAiConnectors`). For Cursor it puts the skills, the instructions as a rule, the toolkit hooks and the servers under `~/.cursor`, and with both installed it equips both. Run `setup` and `update` outside the agent, and call `bin\tazuna.cmd` rather than the `.ps1`, which an `AllSigned` execution policy blocks.
 
 ### Your first project
 
@@ -234,7 +234,7 @@ sequenceDiagram
     end
 ```
 
-The gate compares a fingerprint of the code with the last passing run, blocks once per turn, and fails open without a `verify.ps1` or on its own error. A run with `-SkipTests` does not count. Claude Code receives the reason through the `Stop` hook's exit code 2; Cursor receives it as a follow-up message from its `stop` hook.
+The gate compares a fingerprint of the code with the last passing run, blocks once per turn, and fails open without a `verify.ps1` or on its own error. A run with `-SkipTests` does not count. The fingerprint covers the files git tracks or would track, so build output and `node_modules` cost nothing, and `verify.ps1` reports the last pass instead of repeating it while that fingerprint holds; `-Force` runs it again. Claude Code receives the reason through the `Stop` hook's exit code 2; Cursor receives it as a follow-up message from its `stop` hook.
 
 ## Safety
 

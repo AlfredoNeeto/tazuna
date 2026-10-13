@@ -10,7 +10,11 @@ rules below are enforced by the same mechanisms it ships to other projects.
 ```
 
 This runs `scripts\test-harness.ps1`, the self-test. It prints `VERIFICATION PASSED` or
-`VERIFICATION FAILED` and exits non-zero on failure.
+`VERIFICATION FAILED` and exits non-zero on failure. On sources that already passed it reports
+that pass at once; `-Force` runs it again.
+
+The self-test runs its sections in four processes. A section starts with `Start-Section` and
+needs no other registration; `-Only <id>` runs matching cases in one process.
 
 Run it after changing anything here. A `Stop` hook refuses to end a turn that changed code
 without a passing run, so this is not a reminder — it is a gate.
