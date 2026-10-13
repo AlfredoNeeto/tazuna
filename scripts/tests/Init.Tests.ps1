@@ -491,6 +491,22 @@ try {
         return $true
     }
 
+    Test-Case -Name "UP2 init fails when the project's own settings.json leaves the gate unwired, and -Force wires it" -Check {
+        $root = New-ScratchRoot
+        $project = Join-Path $root "project"
+        New-Item -ItemType Directory -Path (Join-Path $project ".claude") -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $project "App.csproj") -Value '<Project Sdk="Microsoft.NET.Sdk" />' -NoNewline
+        Set-Content -LiteralPath (Join-Path $project ".claude\settings.json") -Value '{ "permissions": { "allow": [] } }' -NoNewline
+
+        $first = Invoke-WithStubs -Root $root -Script (Join-Path $scriptsRoot "init-project.ps1") -Arguments @("-Path", $project, "-NoTrust")
+        if ($first.Code -ne 1) { return "exit $($first.Code) with an unwired settings.json, expected 1" }
+        if ($first.Output -notmatch "verification gate is OFF") { return ("no message about the gate: " + $first.Output) }
+
+        $forced = Invoke-WithStubs -Root $root -Script (Join-Path $scriptsRoot "init-project.ps1") -Arguments @("-Path", $project, "-NoTrust", "-Force")
+        if ($forced.Code -ne 0) { return "-Force: exit $($forced.Code): $($forced.Output)" }
+        return $true
+    }
+
     Test-Case -Name "C15 both AGENTS.md templates are at most 40 lines" -Check {
         foreach ($type in @("dotnet", "generic")) {
             $count = @(Get-Content -LiteralPath (Join-Path $repoRoot "templates\$type\AGENTS.md")).Count

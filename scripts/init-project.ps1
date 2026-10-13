@@ -592,6 +592,30 @@ if ($skipped -gt 0) {
     Write-Host "Re-run with -Force to replace the skipped files (they will be backed up first)."
 }
 
+# why: a project that already had .claude/settings.json keeps it, and when that file runs no Stop
+# hook the gate is off with no symptom. Saying so and failing is the only honest end.
+function Test-GateWired {
+    param([string]$SettingsPath)
+
+    if (-not (Test-Path -LiteralPath $SettingsPath)) { return $false }
+
+    try { $settings = Get-Content -LiteralPath $SettingsPath -Raw | ConvertFrom-Json } catch { return $false }
+
+    if (-not ($settings.PSObject.Properties["hooks"] -and $settings.hooks.PSObject.Properties["Stop"])) { return $false }
+    return (($settings.hooks.Stop | ConvertTo-Json -Depth 10) -match "require-verification\.ps1")
+}
+
+$projectSettings = Join-Path $targetRoot (Join-Path ".claude" "settings.json")
+
+if ((-not $WhatIfPreference) -and (-not (Test-GateWired -SettingsPath $projectSettings))) {
+    Write-Host ""
+    Write-Status -Label "FAIL" -Detail ".claude\settings.json runs no require-verification.ps1: the verification gate is OFF here"
+    Write-Host "            tazuna init -Force replaces it with the template and keeps a backup;"
+    Write-Host "            or copy the template's hooks block into it yourself."
+    Write-Host ""
+    exit 1
+}
+
 # Workspace trust
 # ---------------
 # Project permissions and hooks are trust-requiring features. Installing them
