@@ -532,7 +532,7 @@ Test-Case -Name "SK3 the kit skills keep their contract: fix-bug proves with a f
     foreach ($phrase in @("smallest test that fails", "every caller", "before\s+and after", "verify\.ps1", "Never weaken, skip or delete a\s+test")) {
         if ($fixBug -notmatch $phrase) { return "fix-bug no longer says: $phrase" }
     }
-    foreach ($phrase in @("verify\.ps1", "Conventional Commit", "Never run ``git push``", "never merge", "Stop before publishing")) {
+    foreach ($phrase in @("verify\.ps1", "Conventional Commit", "Draft the pull request", "Never run ``git push``", "never merge", "Stop before publishing")) {
         if ($ship -notmatch $phrase) { return "ship no longer says: $phrase" }
     }
     return $true
