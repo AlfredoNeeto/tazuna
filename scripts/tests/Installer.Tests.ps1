@@ -59,6 +59,8 @@ try {
         Add-Member -InputObject $live -MemberType NoteProperty -Name "hooks" -Value ([PSCustomObject]@{ Stop = @([PSCustomObject]@{ hooks = @([PSCustomObject]@{ type = "command"; command = "node tlc-exec.mjs stop" }) }) })
         Add-Member -InputObject $live -MemberType NoteProperty -Name "modelSettings" -Value ([PSCustomObject]@{ kept = $true })
         $live.permissions = [PSCustomObject]@{ allow = @("Bash(curl:*)") }
+        # why: a key Tazuna ships that the live file lacks must be added, not only replaced where present.
+        $live.PSObject.Properties.Remove("disableClaudeAiConnectors")
         [System.IO.File]::WriteAllText($settingsPath, ($live | ConvertTo-Json -Depth 20))
 
         $output = & (Join-Path $scriptsRoot "install.ps1") 6>&1 | Out-String
@@ -68,6 +70,7 @@ try {
         if (-not $merged.PSObject.Properties["hooks"]) { return "the toolkit's hooks were dropped" }
         if (-not $merged.PSObject.Properties["modelSettings"]) { return "the user's modelSettings was dropped" }
         if ((Get-JsonCanonicalForm -Value $merged.permissions) -ne (Get-JsonCanonicalForm -Value $shipped.permissions)) { return "the shipped permissions did not replace the live ones" }
+        if ((-not $merged.PSObject.Properties["disableClaudeAiConnectors"]) -or ($merged.disableClaudeAiConnectors -ne $shipped.disableClaudeAiConnectors)) { return "a shipped key missing from the live file was not added" }
         if ($output -notmatch "UPDATE\s+settings\.json") { return ("the changed file was not reported UPDATE: " + $output) }
 
         # why: the toolkit rewrites the file in its own layout; the same content must not count as a change.

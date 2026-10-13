@@ -143,7 +143,9 @@ try {
     }
 
     Test-Case -Name "G1 push is refused in every spelling, global options and compound commands included" -Check {
-        foreach ($command in @("git push", "git -C . push origin main", "git -c core.pager=less push", "git --git-dir=.git push", ('git status {0} git push' -f '&&'))) {
+        $spellings = @("git push", "git -C . push origin main", "git -c core.pager=less push", "git --git-dir=.git push", "git --git-dir .git push", "git --work-tree=. push", "git --work-tree . push",
+            'git -c user.name="A B" push', 'git -c "core.a=b c" push', "git --config-env=core.x=Y push", 'git -C "C:\My Repo" push', ('git status {0} git push' -f '&&'))
+        foreach ($command in $spellings) {
             $call = Invoke-HookCall -Command $command
             if (($call.Code -ne 2) -or ($call.Err -notmatch "Refusing to push")) { return "'$command': exit $($call.Code), stderr '$($call.Err.Trim())'" }
         }
@@ -179,8 +181,10 @@ try {
             Remove-Item -LiteralPath (Join-Path $hookRepo ".env") -Force
 
             Set-Content -LiteralPath (Join-Path $hookRepo "Tracked.cs") -Value ("var key = `"AKIA" + "ABCDEFGHIJKLMNOP`";") -NoNewline
-            $call = Invoke-HookCall -Command "git commit -am wip"
-            if (($call.Code -ne 2) -or ($call.Err -notmatch "AWS access key")) { return "commit -am with a key in a tracked file: exit $($call.Code), stderr '$($call.Err.Trim())'" }
+            foreach ($command in @("git commit -am wip", "git commit -a -m wip", "git commit --all -m wip")) {
+                $call = Invoke-HookCall -Command $command
+                if (($call.Code -ne 2) -or ($call.Err -notmatch "AWS access key")) { return "$command with a key in a tracked file: exit $($call.Code), stderr '$($call.Err.Trim())'" }
+            }
 
             $call = Invoke-HookCall -Command "git commit -m wip"
             if ($call.Code -ne 0) { return "a plain commit with nothing staged was refused: exit $($call.Code), stderr '$($call.Err.Trim())'" }
@@ -198,6 +202,25 @@ try {
         if ($call.Code -ne 0) { return "exit $($call.Code), stderr '$($call.Err.Trim())'" }
         $answer = $call.Out | ConvertFrom-Json
         if ($answer.hookSpecificOutput.permissionDecision -ne "ask") { return "stdout: $($call.Out)" }
+        return $true
+    }
+
+    Test-Case -Name "G7 a payload with no command is allowed, silently under Claude Code and with an allow under Cursor" -Check {
+        $previous = $ErrorActionPreference
+        try {
+            $ErrorActionPreference = "Continue"
+            $global:LASTEXITCODE = 0
+            $claude = (('{"tool_name":"Bash","cwd":"x","tool_input":{}}') | & powershell -NoProfile -ExecutionPolicy Bypass -File $hookScript 2>$null | Out-String).Trim()
+            $claudeCode = $LASTEXITCODE
+            $cursor = (('{"cwd":"x","workspace_roots":["x"]}') | & powershell -NoProfile -ExecutionPolicy Bypass -File $hookScript -Agent cursor 2>$null | Out-String).Trim()
+            $cursorCode = $LASTEXITCODE
+        }
+        finally {
+            $ErrorActionPreference = $previous
+        }
+
+        if (($claudeCode -ne 0) -or $claude) { return "Claude Code: exit $claudeCode, stdout '$claude'" }
+        if (($cursorCode -ne 0) -or ($cursor -ne '{"permission":"allow"}')) { return "Cursor: exit $cursorCode, stdout '$cursor'" }
         return $true
     }
 

@@ -70,11 +70,12 @@ $secretContentPatterns = @(
 )
 
 # invariant: a git call is `git`, its global options, then the subcommand and its arguments up to
-# the next ; & | or line break. An option with a value takes it quoted or bare.
-$argument = '(?:"[^"]*"|''[^'']*''|[^\s;&|]+)'
+# the next ; & | or line break. A value is one shell word: bare runs and quoted runs, joined, so
+# -c user.name="A B" is one value and not a value followed by a subcommand.
+$argument = '(?:[^\s;&|"'']|"[^"]*"|''[^'']*'')+'
 $gitCallPattern = '(?<![\w.\\/-])git(?:\.exe)?(?<options>(?:\s+(?:-[Cc]\s+' + $argument +
     '|--(?:git-dir|work-tree|namespace|exec-path)(?:=|\s+)' + $argument +
-    '|-{1,2}[A-Za-z][\w-]*))*)\s+(?<subcommand>[A-Za-z][\w-]*)(?<rest>[^;&|\r\n]*)'
+    '|-{1,2}[A-Za-z][\w-]*(?:=' + $argument + ')?))*)\s+(?<subcommand>[A-Za-z][\w-]*)(?<rest>[^;&|\r\n]*)'
 
 # invariant: the subcommands user/settings.json denies, besides push, read as "subcommand arguments".
 $destructivePatterns = @(
@@ -283,8 +284,8 @@ try {
     $first = $commits[0]
 
     # why: `git -C <path> commit` commits in <path>, so that is where the changes to scan are.
-    if ($first.Options -match '-C\s+(?<path>"[^"]*"|''[^'']*''|[^\s;&|]+)') {
-        $target = $Matches["path"].Trim('"', "'")
+    if ($first.Options -match ('-C\s+(?<path>' + $argument + ')')) {
+        $target = $Matches["path"].Replace('"', '').Replace("'", '')
         if (-not [System.IO.Path]::IsPathRooted($target)) { $target = Join-Path $workingDirectory $target }
         $repository = $target
     }

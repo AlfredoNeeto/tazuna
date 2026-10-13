@@ -319,6 +319,31 @@ try {
         return $true
     }
 
+    Test-Case -Name "F19 -Only runs the matching cases alone, and a name that matches none fails the run" -Check {
+        $kit = Join-Path $PSScriptRoot "TestKit.ps1"
+        $body = @(
+            '[CmdletBinding()] param([switch]$SkipSlow, [string]$Only)',
+            ". '$kit'",
+            'Test-Case -Name "Z1 the chosen case" -Check { return $true }',
+            'Test-Case -Name "Z2 a case left out" -Check { return $true }',
+            'Complete-TestFile') -join "`r`n"
+        $root = New-SpeedProject -NoGit -Files @{ "Pick.Tests.ps1" = $body }
+        $file = Join-Path $root "Pick.Tests.ps1"
+
+        $output = @(Invoke-TestRun -Files @($file) -Only "Z1" 6>&1)
+        $code = (@($output | Where-Object { $_ -is [int] }) -join ",")
+        $text = (@($output | Where-Object { $_ -isnot [int] }) | Out-String)
+        if ($code -ne "0") { return ("-Only Z1 returned '$code': " + $text) }
+        if ($text -notmatch "PASS\s+Z1 the chosen case") { return ("Z1 did not run: " + $text) }
+        if ($text -match "Z2 a case left out") { return ("Z2 ran although -Only named Z1: " + $text) }
+
+        $output = @(Invoke-TestRun -Files @($file) -Only "NOPE" 6>&1)
+        $code = (@($output | Where-Object { $_ -is [int] }) -join ",")
+        $text = (@($output | Where-Object { $_ -isnot [int] }) | Out-String)
+        if (($code -ne "1") -or ($text -notmatch "no case named 'NOPE' ran")) { return ("-Only NOPE returned '$code': " + $text) }
+        return $true
+    }
+
     function New-CountingProject {
         # why: a step that only reports it ran shows whether verify.ps1 repeated the work or reused a pass.
         $root = New-SpeedProject -NoGit -Files @{ "App.txt" = "a" }

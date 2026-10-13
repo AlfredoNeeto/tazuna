@@ -502,6 +502,11 @@ try {
         if ($first.Code -ne 1) { return "exit $($first.Code) with an unwired settings.json, expected 1" }
         if ($first.Output -notmatch "verification gate is OFF") { return ("no message about the gate: " + $first.Output) }
 
+        # why: a Stop hook that runs something else is not the gate either.
+        Set-Content -LiteralPath (Join-Path $project ".claude\settings.json") -Value '{ "hooks": { "Stop": [ { "hooks": [ { "type": "command", "command": "node other-stop.js" } ] } ] } }' -NoNewline
+        $other = Invoke-WithStubs -Root $root -Script (Join-Path $scriptsRoot "init-project.ps1") -Arguments @("-Path", $project, "-NoTrust")
+        if ($other.Code -ne 1) { return "exit $($other.Code) with a Stop hook that is not the gate, expected 1" }
+
         $forced = Invoke-WithStubs -Root $root -Script (Join-Path $scriptsRoot "init-project.ps1") -Arguments @("-Path", $project, "-NoTrust", "-Force")
         if ($forced.Code -ne 0) { return "-Force: exit $($forced.Code): $($forced.Output)" }
         return $true
