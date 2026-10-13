@@ -19,8 +19,9 @@ $script:excludedDirectories = @(
     ".harness-backup", "state"
 )
 
-# why: one match per path instead of a loop over its segments; -match ignores case, as -contains did.
-$script:excludedPathPattern = "(^|\\)(" + (($script:excludedDirectories | ForEach-Object { [regex]::Escape($_) }) -join "|") + ")(\\|$)"
+# why: git's list is the source except for the state this harness and the toolkit write into the
+# project; it changes on every run, and a project's .gitignore does not always name it.
+$script:machineStatePattern = '^\.claude\\state(\\|$)|(^|\\)(\.tlc|\.harness-backup)(\\|$)'
 
 # Binaries, archives, media and machine-local cruft. Everything else counts.
 $script:excludedExtensions = @(
@@ -151,10 +152,15 @@ function Get-GitListedFile {
         $start.CreateNoWindow = $true
         $start.RedirectStandardOutput = $true
         $start.StandardOutputEncoding = New-Object System.Text.UTF8Encoding $false
+        # why: a "fatal: not a git repository" from a broken .git would otherwise print in every hook.
+        $start.RedirectStandardError = $true
 
         $process = [System.Diagnostics.Process]::Start($start)
+        # hazard: stderr is drained in the background; a full stderr pipe would block git, and this read with it.
+        $errors = $process.StandardError.ReadToEndAsync()
         $output = $process.StandardOutput.ReadToEnd()
         $process.WaitForExit()
+        $null = $errors.Result
 
         if ($process.ExitCode -ne 0) { return $null }
 
@@ -213,13 +219,14 @@ function Get-ProjectFile {
     .DESCRIPTION
         In a git work tree these are the files git tracks or would track, which
         git answers from its index in milliseconds; .gitignore already says what
-        is not source. The walk this replaced enumerated node_modules, bin and
-        obj in full before discarding them: 11.6 s on a 35,000-file checkout,
-        paid at every Stop.
+        is not source, and a tracked build/ directory is source. Only the state
+        this harness writes (.claude/state, .tlc, .harness-backup) is dropped.
+        The walk this replaced enumerated node_modules, bin and obj in full
+        before discarding them: 11.6 s on a 35,000-file checkout, paid at every
+        Stop.
 
         Outside git, or when git cannot answer, the tree is walked without
-        entering an excluded directory. Either way no path with an excluded
-        directory segment is returned. git lists a submodule, or a nested
+        entering an excluded directory. git lists a submodule, or a nested
         repository it does not track, as one entry for its directory.
     #>
     [CmdletBinding()]
@@ -237,14 +244,15 @@ function Get-ProjectFile {
         $listed = Get-GitListedFile -Root $rootFull
     }
 
-    if ($null -eq $listed) {
-        $listed = @(Get-WalkedFile -Root $rootFull -Start $rootFull)
-    }
-
     $files = New-Object System.Collections.Generic.List[string]
 
-    foreach ($relative in $listed) {
-        if ($relative -notmatch $script:excludedPathPattern) { $files.Add($relative) }
+    if ($null -eq $listed) {
+        foreach ($relative in (Get-WalkedFile -Root $rootFull -Start $rootFull)) { $files.Add($relative) }
+    }
+    else {
+        foreach ($relative in $listed) {
+            if ($relative -notmatch $script:machineStatePattern) { $files.Add($relative) }
+        }
     }
 
     $sorted = $files.ToArray()

@@ -2663,6 +2663,46 @@ try {
         return $true
     }
 
+    Test-Case -Name "F13 when git cannot list a work tree, the walk answers and git's error stays out of the output" -Check {
+        $root = New-SpeedProject -NoGit -Files @{ "App.cs" = "a"; "node_modules\p\i.js" = "x" }
+        [System.IO.File]::WriteAllText((Join-Path $root ".git"), "gitdir: " + (Join-Path $root "missing-gitdir"))
+
+        $module = Join-Path $sharedRoot "dot-claude\scripts\VerifyCommon.psm1"
+        $command = "Import-Module '$module' -Force; (Get-ProjectFile -ProjectRoot '$root') -join '|'"
+        $previous = $ErrorActionPreference
+
+        try {
+            $ErrorActionPreference = "Continue"
+            $output = (& powershell -NoProfile -ExecutionPolicy Bypass -Command $command 2>&1 | Out-String)
+        }
+        finally {
+            $ErrorActionPreference = $previous
+        }
+
+        if ($output -match "fatal") { return ("git's error reached the output: " + $output.Trim()) }
+        $files = @($output.Trim().Split("|"))
+        if ($files -notcontains "App.cs") { return ("the walk did not answer: " + $output.Trim()) }
+        if (@($files | Where-Object { $_.StartsWith("node_modules") }).Count -gt 0) { return ("the walk entered node_modules: " + $output.Trim()) }
+        return $true
+    }
+
+    Test-Case -Name "F14 in git a tracked build directory is source and the harness's own state is not" -Check {
+        $root = New-SpeedProject -Files @{ "src\App.cs" = "a"; "build\_build.csproj" = "<Project />"; "build\Build.cs" = "b" }
+
+        if (@(Get-ProjectFile -ProjectRoot $root) -notcontains "build\_build.csproj") { return "build\_build.csproj is not listed, so .NET discovery cannot see it" }
+
+        $start = Get-SourceFingerprint -ProjectRoot $root
+        foreach ($state in @(".claude\state\last-verification.json", ".tlc\harness\state\handoff.json")) {
+            New-Item -ItemType Directory -Path (Split-Path -Parent (Join-Path $root $state)) -Force | Out-Null
+            [System.IO.File]::WriteAllText((Join-Path $root $state), "{}")
+        }
+        if ((Get-SourceFingerprint -ProjectRoot $root) -ne $start) { return "state under .claude\state or .tlc changed the fingerprint" }
+
+        [System.IO.File]::WriteAllText((Join-Path $root "build\Build.cs"), "changed")
+        if ((Get-SourceFingerprint -ProjectRoot $root) -eq $start) { return "editing the tracked build\Build.cs left the fingerprint unchanged" }
+        return $true
+    }
+
     function New-CountingProject {
         # why: a step that only reports it ran shows whether verify.ps1 repeated the work or reused a pass.
         $root = New-SpeedProject -NoGit -Files @{ "App.txt" = "a" }
