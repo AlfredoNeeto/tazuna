@@ -2485,6 +2485,122 @@ Test-Case -Name "the verifier still uses the dotnet CLI on an SDK-style project"
 }
 
 Write-Host ""
+Write-Host "Verification speed"
+Write-Host "------------------"
+
+Import-Module (Join-Path $sharedRoot (Join-Path "dot-claude" (Join-Path "scripts" "VerifyCommon.psm1"))) -Force
+
+$script:speedRoots = @()
+
+function New-SpeedProject {
+    # why: each case gets its own repository, so no case sees another's files or commits.
+    param([hashtable]$Files, [string[]]$Ignore = @(), [switch]$NoGit)
+
+    $root = Join-Path ([System.IO.Path]::GetTempPath()) ("harness-speed-" + [guid]::NewGuid().ToString("N").Substring(0, 8))
+    $script:speedRoots += $root
+
+    foreach ($name in $Files.Keys) {
+        $path = Join-Path $root $name
+        New-Item -ItemType Directory -Path (Split-Path -Parent $path) -Force | Out-Null
+        [System.IO.File]::WriteAllText($path, $Files[$name])
+    }
+
+    if ($Ignore.Count -gt 0) { [System.IO.File]::WriteAllText((Join-Path $root ".gitignore"), ($Ignore -join "`n")) }
+
+    if (-not $NoGit) {
+        & git -c init.defaultBranch=main init -q $root
+        Invoke-SpeedCommit -Root $root
+    }
+
+    return $root
+}
+
+function Invoke-SpeedCommit {
+    param([string]$Root)
+    & git -C $Root -c core.autocrlf=false add -A
+    & git -C $Root -c user.name=harness -c user.email=harness@example.invalid commit -q -m commit
+}
+
+try {
+
+    Test-Case -Name "F1 in a git work tree the project files are what git lists: tracked, untracked, never a gitignored directory" -Check {
+        $root = New-SpeedProject -Files @{ "src\App.cs" = "class A {}"; "gen\Out.cs" = "x"; "node_modules\p\i.js" = "x" } -Ignore @("gen/", "node_modules/")
+        [System.IO.File]::WriteAllText((Join-Path $root "New.cs"), "class N {}")
+
+        $files = @(Get-ProjectFile -ProjectRoot $root)
+
+        if (($files -join "|") -ne ".gitignore|New.cs|src\App.cs") { return ("listed: " + ($files -join ", ")) }
+        return $true
+    }
+
+    Test-Case -Name "F2 the fingerprint changes with a listed file or a new untracked file, and not with a gitignored one" -Check {
+        $root = New-SpeedProject -Files @{ "src\App.cs" = "class A {}"; "gen\Out.cs" = "x" } -Ignore @("gen/")
+        $start = Get-SourceFingerprint -ProjectRoot $root
+
+        [System.IO.File]::WriteAllText((Join-Path $root "gen\Out.cs"), "changed")
+        if ((Get-SourceFingerprint -ProjectRoot $root) -ne $start) { return "a change under the gitignored gen/ changed the fingerprint" }
+
+        [System.IO.File]::WriteAllText((Join-Path $root "src\App.cs"), "class A { int x; }")
+        $edited = Get-SourceFingerprint -ProjectRoot $root
+        if ($edited -eq $start) { return "editing a tracked file left the fingerprint unchanged" }
+
+        [System.IO.File]::WriteAllText((Join-Path $root "Extra.cs"), "class E {}")
+        if ((Get-SourceFingerprint -ProjectRoot $root) -eq $edited) { return "a new untracked file left the fingerprint unchanged" }
+
+        return $true
+    }
+
+    Test-Case -Name "F3 staging and committing an edit leaves the fingerprint as it was" -Check {
+        $root = New-SpeedProject -Files @{ "App.cs" = "a" }
+        [System.IO.File]::WriteAllText((Join-Path $root "App.cs"), "b")
+        [System.IO.File]::WriteAllText((Join-Path $root "New.cs"), "n")
+        $edited = Get-SourceFingerprint -ProjectRoot $root
+
+        Invoke-SpeedCommit -Root $root
+
+        if ((Get-SourceFingerprint -ProjectRoot $root) -ne $edited) { return "the commit changed the fingerprint, so the gate would ask for a new verification after every commit" }
+        return $true
+    }
+
+    Test-Case -Name "F4 outside git the walk lists the sources and never a path under an excluded directory" -Check {
+        $root = New-SpeedProject -NoGit -Files @{ "src\App.cs" = "a"; "node_modules\p\i.js" = "x"; "src\bin\Debug\App.dll" = "x"; "src\obj\App.cs" = "x" }
+
+        $files = @(Get-ProjectFile -ProjectRoot $root)
+
+        if (($files -join "|") -ne "src\App.cs") { return ("listed: " + ($files -join ", ")) }
+        return $true
+    }
+
+    Test-Case -Name "F5 a change inside a nested repository changes the fingerprint" -Check {
+        $root = New-SpeedProject -Files @{ "App.cs" = "a" }
+        $nested = Join-Path $root "lib"
+        New-Item -ItemType Directory -Path $nested -Force | Out-Null
+        & git -c init.defaultBranch=main init -q $nested
+        [System.IO.File]::WriteAllText((Join-Path $nested "Lib.cs"), "class L {}")
+        $start = Get-SourceFingerprint -ProjectRoot $root
+
+        [System.IO.File]::WriteAllText((Join-Path $nested "Lib.cs"), "class L { int y; }")
+
+        if ((Get-SourceFingerprint -ProjectRoot $root) -eq $start) { return "editing lib\Lib.cs in a nested repository left the fingerprint unchanged" }
+        return $true
+    }
+
+    Test-Case -Name "F6 a change to a file with a non-ASCII name changes the fingerprint" -Check {
+        $name = "Relat" + [char]0x00F3 + "rio.cs"
+        $root = New-SpeedProject -Files @{ $name = "a" }
+        $start = Get-SourceFingerprint -ProjectRoot $root
+
+        [System.IO.File]::WriteAllText((Join-Path $root $name), "b")
+
+        if ((Get-SourceFingerprint -ProjectRoot $root) -eq $start) { return "editing $name left the fingerprint unchanged" }
+        return $true
+    }
+}
+finally {
+    foreach ($root in $script:speedRoots) { Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+Write-Host ""
 Write-Host "Setup, doctor and MCP"
 Write-Host "---------------------"
 
