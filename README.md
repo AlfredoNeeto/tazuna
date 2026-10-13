@@ -70,7 +70,7 @@ git clone https://github.com/AlfredoNeeto/tazuna.git "$HOME\tazuna"; & "$HOME\ta
 $env:Path += ";$HOME\tazuna\bin"
 ```
 
-`setup` installs `harness-toolkit` 0.16.2 and runs `tlc harness install`, installs the `tlc-*` and `harness-eval` skills from the pinned skills catalog 0.17.8 and the user MCP servers, then runs `tazuna doctor`. Running it again repairs a machine that drifted. For Claude Code it also copies `user/` into `~/.claude` and adds the `ponytail` plugin. It replaces `~/.claude/settings.json` and `~/.claude/CLAUDE.md` with Tazuna's and keeps a backup of yours in `~/.claude\.harness-backup\`; those settings switch off the claude.ai connectors and sync (`disableClaudeAiConnectors`). For Cursor it puts the skills, the instructions as a rule, the toolkit hooks and the servers under `~/.cursor`, and with both installed it equips both. Run `setup` and `update` outside the agent, and call `bin\tazuna.cmd` rather than the `.ps1`, which an `AllSigned` execution policy blocks.
+`setup` installs `harness-toolkit` 0.16.2 and runs `tlc harness install`, installs the `tlc-*` and `harness-eval` skills from the pinned skills catalog 0.17.8 and the user MCP servers, then runs `tazuna doctor`. Running it again repairs a machine that drifted. For Claude Code it also copies `user/` into `~/.claude` and adds the `ponytail` plugin. It replaces `~/.claude/CLAUDE.md` and, in `~/.claude/settings.json`, the keys Tazuna ships, keeps your other keys and a backup of what it replaces in `~/.claude\.harness-backup\`; those settings switch off the claude.ai connectors and sync (`disableClaudeAiConnectors`). For Cursor it puts the skills, the instructions as a rule, the toolkit hooks and the servers under `~/.cursor`, and with both installed it equips both. Run `setup` and `update` outside the agent, and call `bin\tazuna.cmd` rather than the `.ps1`, which an `AllSigned` execution policy blocks.
 
 ### Your first project
 
@@ -79,7 +79,7 @@ cd C:\src\MyApi
 tazuna init
 ```
 
-`init` detects the stack (`dotnet` or `generic`) and writes `AGENTS.md` plus `.claude\` with the permissions, the three hooks, stack rules and `scripts\verify.ps1`, the project's build and tests. Cursor reads those files too, and `init` adds `.cursor/hooks.json` and the stack rules as `.cursor/rules/*.mdc` for it. It also trusts the workspace, since Claude Code silently ignores project hooks otherwise, and never overwrites a file you edited unless you pass `-Force`. In `AGENTS.md`, write only what the code does not show, because every line there goes into every turn.
+`init` detects the stack (`dotnet` or `generic`) and writes `AGENTS.md` plus `.claude\` with the permissions, the three hooks, stack rules and `scripts\verify.ps1`, the project's build and tests. Cursor reads those files too, and `init` adds `.cursor/hooks.json` and the stack rules as `.cursor/rules/*.mdc` for it. It also trusts the workspace, since Claude Code silently ignores project hooks otherwise. It keeps a file you edited unless you pass `-Force`, except Tazuna's own hooks and `VerifyCommon.psm1`, which it brings up to date with a backup, and it stops with an error when the project's `settings.json` leaves the gate unwired. In `AGENTS.md`, write only what the code does not show, because every line there goes into every turn.
 
 <p align="center"><img src="docs/assets/divider.svg" alt="Ornamental divider in gold, lit from the left" width="480"></p>
 
@@ -143,6 +143,8 @@ flowchart TD
 | Legacy code, ambiguous requirements, several sessions | `/tlc-spec-driven` |
 | Work already decided in a work item, PRD or RFC | `/tlc-plan` to cut it into tasks, `/tlc-implement` to build each one |
 | Risky: security, money, data, a public contract | `/review-change`, even when the change is small |
+| A reported bug | `/fix-bug`: a failing test first, then the root cause |
+| A finished change to hand over | `/ship`: verify, read the diff, write the commit and the PR text; it never pushes |
 
 With `/tlc-spec-lean I want X`, the agent reads the code, asks you only about decisions that are yours, writes `.specs/features/<feature>/plan.md` and stops until you approve it. Each criterion becomes a check with the test that settles it. The agent builds, and a fresh Verifier that never saw the implementation proves every check. A changed screen is opened with Playwright before it is done.
 
@@ -243,8 +245,8 @@ The gate compares a fingerprint of the code with the last passing run, blocks on
 | Protection | Enforced by |
 |---|---|
 | No turn ends on unverified code | the `Stop` hook (`stop` in Cursor), per project, in any stack |
-| No secret gets into a commit | the `PreToolUse` hook (`beforeShellExecution` in Cursor), which inspects what is staged |
-| Nothing is published or destroyed without you: `git push`, `reset --hard`, `clean`, `gh pr create`, `terraform apply` are denied, `commit` asks | permissions in `~/.claude/settings.json`; Cursor has no permission rules, so there only the toolkit floor below applies |
+| No secret gets into a commit | the `PreToolUse` hook (`beforeShellExecution` in Cursor), which inspects what the commit will contain, a `git add` in the same command included |
+| Nothing is published or destroyed without you: `git push`, `reset --hard`, `clean`, `gh pr create`, `terraform apply` are denied, `commit` asks | permissions in `~/.claude/settings.json`, and for git the `PreToolUse` hook, which also catches spellings such as `git -C . push` and works in Cursor, where there are no permission rules |
 | Secrets stay out of the context: `.env`, `*.pem` and `~/.ssh` are unreadable, secret-looking output is masked | Claude Code permissions and `harness-toolkit` |
 | Nothing is destroyed outside the repository, and `push --force` is denied | the `harness-toolkit` floor, which in 0.16.2 sees only Bash tool commands; for PowerShell the `deny` rules hold |
 | No feature is done without independent proof | the Verifier and `validate_verification.py` |
@@ -270,7 +272,7 @@ The gate compares a fingerprint of the code with the last passing run, blocks on
 
 > *The order welcomes every pilgrim who brings proof.*
 
-Issues and pull requests are welcome. The rules are in [AGENTS.md](AGENTS.md): after any change `tazuna test` has to print `VERIFICATION PASSED`, and the target is Windows PowerShell 5.1. Changes are listed in [CHANGELOG.md](CHANGELOG.md).
+Issues and pull requests are welcome. The rules are in [AGENTS.md](AGENTS.md): after any change `tazuna test` has to print `VERIFICATION PASSED`, and the target is Windows PowerShell 5.1. CI runs the same self-test on `windows-latest`. Changes are listed in [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 
