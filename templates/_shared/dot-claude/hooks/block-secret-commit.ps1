@@ -69,27 +69,32 @@ $secretContentPatterns = @(
     @{ Name = "OpenAI API key";     Pattern = "sk-[A-Za-z0-9]{32,}" }
 )
 
-# invariant: a git call is `git`, its global options, then the subcommand and its arguments up to
-# the next ; & | or line break. A value is one shell word: bare runs and quoted runs, joined, so
-# -c user.name="A B" is one value and not a value followed by a subcommand.
-$argument = '(?:[^\s;&|"'']|"[^"]*"|''[^'']*'')+'
-$gitCallPattern = '(?<![\w.\\/-])git(?:\.exe)?(?<options>(?:\s+(?:-[Cc]\s+' + $argument +
-    '|--(?:git-dir|work-tree|namespace|exec-path)(?:=|\s+)' + $argument +
-    '|-{1,2}[A-Za-z][\w-]*(?:=' + $argument + ')?))*)\s+(?<subcommand>[A-Za-z][\w-]*)(?<rest>[^;&|\r\n]*)'
+# invariant: git is found by its program word - quoted or not, bare or at the end of a path, in any
+# case, since Windows runs GIT and git.EXE alike. When the next word is the subcommand, it decides.
+# When the next word is a global option, nothing after it is parsed as shell: a value written as
+# a\ b, a` b, $(...) or "x y" cannot hide what follows, so the words below are looked for in the rest
+# of the command. A rare false positive, such as git -C . stash push, is the price of that.
+$gitProgram = '(?<![\w.-])["'']?(?:[^\s;&|"'']*[\\/])?git(?:\.exe)?["'']?(?=\s)'
+$firstWord = '^\s+["'']?(?<word>[^\s"'']+)'
 
-# invariant: the subcommands user/settings.json denies, besides push, read as "subcommand arguments".
+function Test-GitWord {
+    # True when Word stands alone in Text, quoted or bare; --grep=push or push-all do not count.
+    param([string]$Text, [string]$Word)
+    return ($Text -match ('(?<![\w=/.\\-])["'']?' + [regex]::Escape($Word) + '["'']?(?![\w-])'))
+}
+
+# invariant: the subcommands user/settings.json denies besides push, looked for anywhere after a global option.
 $destructivePatterns = @(
-    '^reset\b.*\s--hard\b',
-    '^clean\b',
-    '^branch\b.*\s(-d|-D|--delete)\b',
-    '^filter-branch\b',
-    '^filter-repo\b',
-    '^reflog\s+(delete|expire)\b',
-    '^update-ref\b.*\s-d\b',
-    '^worktree\s+remove\b',
-    '^remote\s+(remove|set-url)\b'
+    '(?<![\w-])reset\b.*\s--hard\b',
+    '(?<![\w=/.\\-])clean(?![\w-])',
+    '(?<![\w-])branch\b.*\s(-d|-D|--delete)\b',
+    '(?<![\w-])filter-branch\b',
+    '(?<![\w-])filter-repo\b',
+    '(?<![\w-])reflog\s+(delete|expire)\b',
+    '(?<![\w-])update-ref\b.*\s-d\b',
+    '(?<![\w-])worktree\s+remove\b',
+    '(?<![\w-])remote\s+(remove|set-url)\b'
 )
-
 function Exit-Allow {
     if ($script:cursor) { [Console]::Out.Write('{"permission":"allow"}') }
     exit 0
@@ -234,7 +239,7 @@ try {
         Exit-Allow
     }
 
-    $calls = @([regex]::Matches($command, $gitCallPattern))
+    $calls = @([regex]::Matches($command, $gitProgram, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase))
 
     if ($calls.Count -eq 0) {
         Exit-Allow
@@ -248,32 +253,45 @@ try {
     }
 
     $commits = @()
+    $stagesAll = $false
 
     foreach ($call in $calls) {
 
-        $options = $call.Groups["options"].Value.Trim()
-        $subcommand = $call.Groups["subcommand"].Value
-        $invocation = ($subcommand + $call.Groups["rest"].Value).Trim()
+        $after = $command.Substring($call.Index + $call.Length)
+        if ($after -notmatch $firstWord) { continue }
+        $word = $Matches["word"]
 
-        if ($subcommand -eq "push") {
+        if (-not $word.StartsWith("-")) {
+
+            $words = ($after -split '[;&|\r\n]')[0].Trim()
+
+            if ($word -eq "push") {
+                Exit-Block -Title "Refusing to push: publishing is the owner's decision." `
+                    -Reasons @("git push is denied, however git is called: $($call.Value.Trim()) $words") `
+                    -Advice @("Leave the push to the owner and say what is ready to publish.")
+            }
+
+            if ($word -eq "add") { $stagesAll = $true }
+            if ($word -eq "commit") { $commits += [PSCustomObject]@{ Global = $false; Words = $words } }
+            continue
+        }
+
+        if (Test-GitWord -Text $after -Word "push") {
             Exit-Block -Title "Refusing to push: publishing is the owner's decision." `
-                -Reasons @("git push is denied in every spelling, global options included: $($call.Value.Trim())") `
+                -Reasons @("a git command with a global option names push:$after") `
                 -Advice @("Leave the push to the owner and say what is ready to publish.")
         }
 
-        if ($options) {
-            foreach ($pattern in $destructivePatterns) {
-                if ($invocation -match $pattern) {
-                    Exit-Block -Title "Refusing a destructive git command written with a global option." `
-                        -Reasons @("$($call.Value.Trim()) is git $invocation, which the user settings deny") `
-                        -Advice @("Ask the owner to run it if it is really needed.")
-                }
+        foreach ($pattern in $destructivePatterns) {
+            if ($after -match $pattern) {
+                Exit-Block -Title "Refusing a destructive git command written with a global option." `
+                    -Reasons @("git$after matches $pattern, a command the user settings deny") `
+                    -Advice @("Ask the owner to run it if it is really needed.")
             }
         }
 
-        if ($subcommand -eq "commit") {
-            $commits += [PSCustomObject]@{ Options = $options; Invocation = $invocation }
-        }
+        if (Test-GitWord -Text $after -Word "add") { $stagesAll = $true }
+        if (Test-GitWord -Text $after -Word "commit") { $commits += [PSCustomObject]@{ Global = $true; Words = $after.Trim() } }
     }
 
     if ($commits.Count -eq 0) {
@@ -283,13 +301,16 @@ try {
     $repository = $workingDirectory
     $first = $commits[0]
 
-    # why: `git -C <path> commit` commits in <path>, so that is where the changes to scan are.
-    if ($first.Options -match ('-C\s+(?<path>' + $argument + ')')) {
-        $target = $Matches["path"].Replace('"', '').Replace("'", '')
+    # why: `git -C <path> commit` commits in <path>; a path the hook cannot read leaves the working directory.
+    if ($first.Global -and ($first.Words -match '^-C\s+(?<path>"[^"]*"|''[^'']*''|\S+)')) {
+        $target = $Matches["path"].Trim('"', "'")
         if (-not [System.IO.Path]::IsPathRooted($target)) { $target = Join-Path $workingDirectory $target }
-        $repository = $target
+        if (Test-Path -LiteralPath $target) { $repository = $target }
     }
 
+    if (@($commits | Where-Object { $_.Words -match '(^|\s)(--all|-[A-Za-z]*a[A-Za-z]*)(?=\s|$)' }).Count -gt 0) {
+        $stagesAll = $true
+    }
     # Confirm we are inside a work tree before invoking git. Outside one, git
     # falls back to --no-index mode and prints its entire usage text to stderr,
     # which would appear as noise on every unrelated commit-shaped command.
@@ -301,9 +322,6 @@ try {
 
         if (Test-GitWorkTree -Path $repository) {
 
-            $stagesAll = ($command -match '(?<![\w.\\/-])git(?:\.exe)?\b[^;&|\r\n]*\sadd\b') -or
-                (@($commits | Where-Object { $_.Invocation -match '(^|\s)(--all|-[A-Za-z]*a[A-Za-z]*)(?=\s|$)' }).Count -gt 0)
-
             $reasons = @(Get-SecretReason -Repository $repository -WorkingTree $stagesAll)
 
             if ($reasons.Count -gt 0) {
@@ -314,8 +332,8 @@ try {
         }
     }
 
-    if (@($commits | Where-Object { $_.Options }).Count -gt 0) {
-        Exit-Ask -Reason "A git commit written with a global option ($($first.Options)) skips the permission rule that asks before every commit."
+    if (@($commits | Where-Object { $_.Global }).Count -gt 0) {
+        Exit-Ask -Reason "A git commit written with a global option skips the permission rule that asks before every commit."
     }
 
     Exit-Allow

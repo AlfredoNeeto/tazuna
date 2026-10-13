@@ -144,7 +144,10 @@ try {
 
     Test-Case -Name "G1 push is refused in every spelling, global options and compound commands included" -Check {
         $spellings = @("git push", "git -C . push origin main", "git -c core.pager=less push", "git --git-dir=.git push", "git --git-dir .git push", "git --work-tree=. push", "git --work-tree . push",
-            'git -c user.name="A B" push', 'git -c "core.a=b c" push', "git --config-env=core.x=Y push", 'git -C "C:\My Repo" push', ('git status {0} git push' -f '&&'))
+            'git -c user.name="A B" push', 'git -c "core.a=b c" push', "git --config-env=core.x=Y push", 'git -C "C:\My Repo" push', ('git status {0} git push' -f '&&'),
+            'git -C a\ b push', 'git -C a` b push', 'git -c user.name=A\ B push', 'git -c "a.b=\"x y\"" push', 'git -c "a.b=`"x y`"" push',
+            'git -C $(echo .) push', 'git -C (Join-Path . .) push', "git --config-env x push", "git --attr-source HEAD push",
+            "GIT push", "git.EXE push", '"git" push', 'git "push"', '"C:\Program Files\Git\cmd\git.exe" push')
         foreach ($command in $spellings) {
             $call = Invoke-HookCall -Command $command
             if (($call.Code -ne 2) -or ($call.Err -notmatch "Refusing to push")) { return "'$command': exit $($call.Code), stderr '$($call.Err.Trim())'" }
@@ -153,7 +156,7 @@ try {
     }
 
     Test-Case -Name "G2 a destructive git command written with a global option is refused" -Check {
-        foreach ($command in @("git -C . reset --hard", "git -C . clean -fd", "git --git-dir=.git branch -D main")) {
+        foreach ($command in @("git -C . reset --hard", "git -C . clean -fd", "git --git-dir=.git branch -D main", 'git -C a\ b clean -fd')) {
             $call = Invoke-HookCall -Command $command
             if (($call.Code -ne 2) -or ($call.Err -notmatch "destructive")) { return "'$command': exit $($call.Code), stderr '$($call.Err.Trim())'" }
         }
@@ -161,7 +164,7 @@ try {
     }
 
     Test-Case -Name "G3 status, log --grep=push, stash push and a -C status pass untouched" -Check {
-        foreach ($command in @("git status", "git -C . status", "git log --grep=push", "git stash push", "git -C . diff")) {
+        foreach ($command in @("git status", "git -C . status", "git log --grep=push", "git -C . log --grep=push", "git stash push", "git -C . diff", 'git -c user.name="A B" status', 'git commit -m "fix push"')) {
             $call = Invoke-HookCall -Command $command
             if (($call.Code -ne 0) -or $call.Out -or $call.Err.Trim()) { return "'$command': exit $($call.Code), stdout '$($call.Out)', stderr '$($call.Err.Trim())'" }
         }
@@ -180,6 +183,12 @@ try {
             if (($call.Code -ne 2) -or ($call.Err -notmatch "\.env")) { return "git add then commit with an untracked .env: exit $($call.Code), stderr '$($call.Err.Trim())'" }
             Remove-Item -LiteralPath (Join-Path $hookRepo ".env") -Force
 
+            # why: a key pasted into a new file with an ordinary name is found by its content, not its name.
+            Set-Content -LiteralPath (Join-Path $hookRepo "notes.txt") -Value ("aws: AKIA" + "ABCDEFGHIJKLMNOP") -NoNewline
+            $call = Invoke-HookCall -Command ('git add . {0} git commit -m wip' -f '&&')
+            if (($call.Code -ne 2) -or ($call.Err -notmatch "AWS access key")) { return "git add then commit with a key in an untracked notes.txt: exit $($call.Code), stderr '$($call.Err.Trim())'" }
+            Remove-Item -LiteralPath (Join-Path $hookRepo "notes.txt") -Force
+
             Set-Content -LiteralPath (Join-Path $hookRepo "Tracked.cs") -Value ("var key = `"AKIA" + "ABCDEFGHIJKLMNOP`";") -NoNewline
             foreach ($command in @("git commit -am wip", "git commit -a -m wip", "git commit --all -m wip")) {
                 $call = Invoke-HookCall -Command $command
@@ -191,6 +200,7 @@ try {
         }
         finally {
             Remove-Item -LiteralPath (Join-Path $hookRepo ".env") -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath (Join-Path $hookRepo "notes.txt") -Force -ErrorAction SilentlyContinue
             & git -C $hookRepo checkout -q -- Tracked.cs
         }
 
@@ -198,10 +208,12 @@ try {
     }
 
     Test-Case -Name "G5 a commit written with a global option asks instead of passing" -Check {
-        $call = Invoke-HookCall -Command "git -C . commit -m wip"
-        if ($call.Code -ne 0) { return "exit $($call.Code), stderr '$($call.Err.Trim())'" }
-        $answer = $call.Out | ConvertFrom-Json
-        if ($answer.hookSpecificOutput.permissionDecision -ne "ask") { return "stdout: $($call.Out)" }
+        foreach ($command in @("git -C . commit -m wip", 'git -C a\ b commit -m wip')) {
+            $call = Invoke-HookCall -Command $command
+            if ($call.Code -ne 0) { return "'$command': exit $($call.Code), stderr '$($call.Err.Trim())'" }
+            $answer = $call.Out | ConvertFrom-Json
+            if ($answer.hookSpecificOutput.permissionDecision -ne "ask") { return "'$command': stdout $($call.Out)" }
+        }
         return $true
     }
 
