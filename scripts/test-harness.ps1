@@ -62,6 +62,36 @@ function Start-Section {
     }
 }
 
+function Get-ShardVerdict {
+    # invariant: a run passes only when every shard printed its result, exited as that result
+    # says, and at least one case passed. A crashed shard must never read as a quiet one.
+    param([Parameter(Mandatory = $true)][object[]]$Results)
+
+    $verdict = [PSCustomObject]@{ Passed = 0; Failed = 0; Skipped = 0; Broken = @(); Ok = $false }
+
+    foreach ($result in $Results) {
+
+        $summary = [regex]::Match([string]$result.Text, "SHARD RESULT: passed (\d+) failed (\d+) skipped (\d+)")
+
+        if (-not $summary.Success) {
+            $verdict.Broken += "shard $($result.Index) (exit $($result.ExitCode), no result)"
+            continue
+        }
+
+        $failed = [int]$summary.Groups[2].Value
+        $verdict.Passed += [int]$summary.Groups[1].Value
+        $verdict.Failed += $failed
+        $verdict.Skipped += [int]$summary.Groups[3].Value
+
+        if (($result.ExitCode -eq 0) -ne ($failed -eq 0)) {
+            $verdict.Broken += "shard $($result.Index) (exit $($result.ExitCode))"
+        }
+    }
+
+    $verdict.Ok = ($verdict.Broken.Count -eq 0) -and ($verdict.Failed -eq 0) -and ($verdict.Passed -gt 0)
+    return $verdict
+}
+
 if ((-not $Only) -and ($Shard -lt 0)) {
 
     Write-Host ""
@@ -85,8 +115,7 @@ if ((-not $Only) -and ($Shard -lt 0)) {
         $shards += [PSCustomObject]@{ Index = $index; Process = $process; Output = $output }
     }
 
-    $totals = @{ Passed = 0; Failed = 0; Skipped = 0 }
-    $broken = @()
+    $results = @()
 
     foreach ($worker in $shards) {
 
@@ -102,27 +131,19 @@ if ((-not $Only) -and ($Shard -lt 0)) {
 
         Write-Host $text.TrimEnd()
 
-        $summary = [regex]::Match($text, "SHARD RESULT: passed (\d+) failed (\d+) skipped (\d+)")
-
-        if ((-not $summary.Success) -or ($worker.Process.ExitCode -ne 0)) {
-            $broken += "shard $($worker.Index) (exit $($worker.Process.ExitCode))"
-        }
-
-        if ($summary.Success) {
-            $totals.Passed += [int]$summary.Groups[1].Value
-            $totals.Failed += [int]$summary.Groups[2].Value
-            $totals.Skipped += [int]$summary.Groups[3].Value
-        }
+        $results += [PSCustomObject]@{ Index = $worker.Index; Text = $text; ExitCode = $worker.Process.ExitCode }
     }
 
+    $verdict = Get-ShardVerdict -Results $results
+
     Write-Host ""
     Write-Host "================="
-    Write-Host ("Passed: {0}   Failed: {1}   Skipped: {2}" -f $totals.Passed, $totals.Failed, $totals.Skipped)
+    Write-Host ("Passed: {0}   Failed: {1}   Skipped: {2}" -f $verdict.Passed, $verdict.Failed, $verdict.Skipped)
     Write-Host "================="
     Write-Host ""
 
-    if (($broken.Count -gt 0) -or ($totals.Failed -gt 0) -or ($totals.Passed -eq 0)) {
-        if ($broken.Count -gt 0) { Write-Host ("Did not finish cleanly: " + ($broken -join ", ")) }
+    if (-not $verdict.Ok) {
+        if ($verdict.Broken.Count -gt 0) { Write-Host ("Did not finish cleanly: " + ($verdict.Broken -join ", ")) }
         Write-Host "HARNESS SELF-TEST FAILED"
         Write-Host ""
         exit 1
@@ -2700,6 +2721,28 @@ try {
 
         [System.IO.File]::WriteAllText((Join-Path $root "build\Build.cs"), "changed")
         if ((Get-SourceFingerprint -ProjectRoot $root) -eq $start) { return "editing the tracked build\Build.cs left the fingerprint unchanged" }
+        return $true
+    }
+
+    Test-Case -Name "F15 the shard verdict fails a crash, a missing result and an exit that contradicts its result, and passes a clean run" -Check {
+        $clean = "SHARD RESULT: passed 5 failed 0 skipped 1"
+        $cases = @(
+            @{ Name = "clean run"; Ok = $true; Shards = @(@{ Index = 0; Text = $clean; ExitCode = 0 }, @{ Index = 1; Text = "SHARD RESULT: passed 3 failed 0 skipped 0"; ExitCode = 0 }) },
+            @{ Name = "crashed shard"; Ok = $false; Shards = @(@{ Index = 0; Text = $clean; ExitCode = 0 }, @{ Index = 1; Text = "PASS one case"; ExitCode = 3 }) },
+            @{ Name = "missing result"; Ok = $false; Shards = @(@{ Index = 0; Text = ""; ExitCode = 0 }) },
+            @{ Name = "non-zero exit after a clean result"; Ok = $false; Shards = @(@{ Index = 0; Text = $clean; ExitCode = 2 }) },
+            @{ Name = "failed case"; Ok = $false; Shards = @(@{ Index = 0; Text = "SHARD RESULT: passed 4 failed 1 skipped 0"; ExitCode = 1 }) },
+            @{ Name = "nothing passed"; Ok = $false; Shards = @(@{ Index = 0; Text = "SHARD RESULT: passed 0 failed 0 skipped 2"; ExitCode = 0 }) }
+        )
+
+        foreach ($case in $cases) {
+            $verdict = Get-ShardVerdict -Results @($case.Shards | ForEach-Object { [PSCustomObject]$_ })
+            if ($verdict.Ok -ne $case.Ok) { return "$($case.Name): Ok is $($verdict.Ok), expected $($case.Ok)" }
+            if ($case.Name -eq "clean run") {
+                if (($verdict.Passed -ne 8) -or ($verdict.Skipped -ne 1) -or ($verdict.Failed -ne 0)) { return "clean run totals: $($verdict.Passed)/$($verdict.Failed)/$($verdict.Skipped), expected 8/0/1" }
+            }
+        }
+
         return $true
     }
 
