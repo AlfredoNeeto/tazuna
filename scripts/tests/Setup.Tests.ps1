@@ -61,6 +61,23 @@ try {
 
         return $true
     }
+    Test-Case -Name "ST3 setup installs the toolkit only when the pinned version is not there yet" -Check {
+        $pinned = $manifest.ToolkitPackage.Substring($manifest.ToolkitPackage.LastIndexOf("@") + 1)
+        $install = "npm install -g " + $manifest.ToolkitPackage
+
+        $fresh = Get-SetupRun -Key "fresh"
+        if (@($fresh.Calls | Where-Object { $_ -eq $install }).Count -ne 1) { return "a machine without the toolkit did not install it" }
+
+        $present = Get-SetupRun -Key "toolkit-present" -Environment @{ HARNESS_STUB_TOOLKIT = $pinned }
+        if ($present.Code -ne 0) { return "exit $($present.Code): $($present.Output)" }
+        if (@($present.Calls | Where-Object { $_.StartsWith("npm install") }).Count -ne 0) { return "the pinned toolkit was installed again" }
+        if ($present.Output -notmatch "already installed") { return "setup did not say the toolkit was already installed" }
+        if (@($present.Calls | Where-Object { $_ -eq "tlc harness install" }).Count -ne 1) { return "tlc harness install no longer runs" }
+
+        $older = Get-SetupRun -Key "toolkit-older" -Environment @{ HARNESS_STUB_TOOLKIT = "0.0.1" }
+        if (@($older.Calls | Where-Object { $_ -eq $install }).Count -ne 1) { return "an older toolkit was not brought to the pin" }
+        return $true
+    }
     Test-Case -Name "C1 doctor fails naming each of the seven skills when absent" -Check {
         $run = Get-SetupRun -Key "fresh"
         $skills = @($manifest.AgentSkills) + "review-change"

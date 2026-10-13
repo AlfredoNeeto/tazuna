@@ -233,7 +233,18 @@ function Invoke-Step {
 
 Start-Step "harness-toolkit"
 
-Invoke-Step -Command "npm" -Arguments @("install", "-g", $manifest.ToolkitPackage)
+# why: reinstalling the pinned toolkit was a network round-trip on every setup and every update.
+$toolkitAt = $manifest.ToolkitPackage.LastIndexOf("@")
+$toolkitName = $manifest.ToolkitPackage.Substring(0, $toolkitAt)
+$toolkitVersion = $manifest.ToolkitPackage.Substring($toolkitAt + 1)
+
+if ((Get-GlobalNpmPackageVersion -Name $toolkitName) -eq $toolkitVersion) {
+    Write-Status -Label "OK" -Detail "$($manifest.ToolkitPackage) is already installed"
+}
+else {
+    Invoke-Step -Command "npm" -Arguments @("install", "-g", $manifest.ToolkitPackage)
+}
+
 Invoke-Step -Command "tlc" -Arguments @("harness", "install")
 
 Start-Step "agent-skills"
@@ -245,9 +256,13 @@ $skillArguments = @("-y", $manifest.AgentSkillsPackage, "install", "-s") + @($ma
 $previousCatalog = $env:SKILLS_CDN_REF
 $env:SKILLS_CDN_REF = $manifest.SkillsCatalog
 
+# why: the CLI takes every agent after -a, so one download serves both.
+$agents = @()
+if ($hasClaude) { $agents += "claude-code" }
+if ($hasCursor) { $agents += "cursor" }
+
 try {
-    if ($hasClaude) { Invoke-Step -Command "npx" -Arguments ($skillArguments + @("-a", "claude-code", "-g")) }
-    if ($hasCursor) { Invoke-Step -Command "npx" -Arguments ($skillArguments + @("-a", "cursor", "-g")) }
+    if ($agents.Count -gt 0) { Invoke-Step -Command "npx" -Arguments ($skillArguments + @("-a") + $agents + @("-g")) }
 }
 finally {
     $env:SKILLS_CDN_REF = $previousCatalog

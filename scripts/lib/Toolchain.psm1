@@ -21,6 +21,35 @@ function Get-NodeMajorVersion {
     return [int](((& node --version) -replace "^v", "").Split(".")[0])
 }
 
+function Get-GlobalNpmPackageVersion {
+    <#
+        The version of a globally installed npm package, or $null when it is
+        absent or npm cannot say. `npm ls` answers from the local prefix, so it
+        costs no network round-trip.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][string]$Name)
+
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+
+    try {
+        $global:LASTEXITCODE = 0
+        # why: npm ls exits 1 for a missing package; the JSON still says so, and stderr is noise here.
+        $listing = ((& npm ls -g $Name --depth=0 --json 2>$null) -join "`n") | ConvertFrom-Json
+        $package = $listing.dependencies.PSObject.Properties[$Name]
+        if ($package) { return [string]$package.Value.version }
+        return $null
+    }
+    catch {
+        return $null
+    }
+    finally {
+        $ErrorActionPreference = $previous
+    }
+}
+
 Export-ModuleMember -Function @(
-    "Get-NodeMajorVersion"
+    "Get-NodeMajorVersion",
+    "Get-GlobalNpmPackageVersion"
 )

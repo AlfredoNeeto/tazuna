@@ -145,24 +145,30 @@ function New-StubBin {
 
     $stubs = @{
         "node"   = 'if ($env:HARNESS_STUB_NODE) { Write-Output $env:HARNESS_STUB_NODE } else { Write-Output "v24.15.0" }'
-        "npm"    = ($record -f "npm") + "`n" + 'if ($env:HARNESS_STUB_FAIL -eq "npm") { exit 1 }'
+        "npm"    = ($record -f "npm") + "`n" + 'if ($env:HARNESS_STUB_FAIL -eq "npm") { exit 1 }' + "`n" +
+                   'if ($args[0] -eq "ls") { if ($env:HARNESS_STUB_TOOLKIT) { Write-Output (''{"dependencies":{"@tech-leads-club/harness-toolkit":{"version":"'' + $env:HARNESS_STUB_TOOLKIT + ''"}}}'') } else { Write-Output "{}" } }'
         "uvx"    = ($record -f "uvx")
         "npx"    = ($record -f "npx") + @'
 
 Add-Content -LiteralPath $env:HARNESS_STUB_LOG -Value ("catalog " + $env:SKILLS_CDN_REF) -WhatIf:$false
 
-$names = @(); $take = $false
+$names = @(); $agents = @(); $take = ""
 foreach ($a in $args) {
-    if ($a -eq "-s") { $take = $true; continue }
-    if ($a.StartsWith("-")) { $take = $false; continue }
-    if ($take) { $names += $a }
+    if ($a -eq "-s") { $take = "skills"; continue }
+    if ($a -eq "-a") { $take = "agents"; continue }
+    if ($a.StartsWith("-")) { $take = ""; continue }
+    if ($take -eq "skills") { $names += $a }
+    if ($take -eq "agents") { $agents += $a }
 }
-$skillsHome = $env:CLAUDE_CONFIG_DIR
-if (($args -join " ") -match " -a cursor( |$)") { $skillsHome = $env:TAZUNA_CURSOR_DIR }
-foreach ($n in $names) {
-    $dir = Join-Path $skillsHome (Join-Path "skills" $n)
-    New-Item -ItemType Directory -Path $dir -Force | Out-Null
-    Set-Content -LiteralPath (Join-Path $dir "SKILL.md") -Value "---`nname: $n`ndescription: stub`n---`n"
+$homes = @()
+if ($agents -contains "claude-code") { $homes += $env:CLAUDE_CONFIG_DIR }
+if ($agents -contains "cursor") { $homes += $env:TAZUNA_CURSOR_DIR }
+foreach ($skillsHome in $homes) {
+    foreach ($n in $names) {
+        $dir = Join-Path $skillsHome (Join-Path "skills" $n)
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $dir "SKILL.md") -Value "---`nname: $n`ndescription: stub`n---`n"
+    }
 }
 '@
         "tlc"    = ($record -f "tlc") + @'
