@@ -452,12 +452,20 @@ $updated = 0
 $unchanged = 0
 $skipped = 0
 
+# why: Tazuna owns the hooks and VerifyCommon.psm1. The user settings deny the agent edits there and
+# no project is meant to change them, so init replaces them, with a backup, and a fix reaches a
+# project that already has an older copy. Every other file is the project's and is kept unless -Force.
+$separator = [System.IO.Path]::DirectorySeparatorChar
+$ownedHooks = ".claude" + $separator + "hooks" + $separator
+$ownedModule = ".claude" + $separator + "scripts" + $separator + "VerifyCommon.psm1"
+
 foreach ($file in $templateFiles) {
 
     $relative = $file.Relative
     $targetFile = Join-Path $targetRoot $relative
+    $owned = $relative.StartsWith($ownedHooks) -or ($relative -eq $ownedModule)
 
-    if ((Test-Path -LiteralPath $targetFile) -and (-not $Force) -and
+    if ((Test-Path -LiteralPath $targetFile) -and (-not $Force) -and (-not $owned) -and
         (-not (Test-FileContentEqual -ReferenceFile $file.FullName -DifferenceFile $targetFile))) {
         $skipped++
         Write-Status -Label "SKIP" -Detail "$relative (differs - yours is kept, -Force replaces it)"

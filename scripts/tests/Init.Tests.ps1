@@ -468,6 +468,29 @@ try {
         return $true
     }
 
+    Test-Case -Name "UP1 a second init replaces Tazuna's hooks and module with a backup, and keeps the project's verify.ps1" -Check {
+        $run = New-InitProject -Files @{ "App.csproj" = '<Project Sdk="Microsoft.NET.Sdk" />' }
+        $owned = @(".claude\hooks\require-verification.ps1", ".claude\scripts\VerifyCommon.psm1")
+        $projectOwned = ".claude\scripts\verify.ps1"
+
+        foreach ($relative in ($owned + $projectOwned)) { Add-Content -LiteralPath (Join-Path $run.Project $relative) -Value "# an older copy" }
+
+        $again = Invoke-WithStubs -Root (Split-Path -Parent $run.Project) -Script (Join-Path $scriptsRoot "init-project.ps1") -Arguments @("-Path", $run.Project, "-NoTrust")
+        if ($again.Code -ne 0) { return "exit $($again.Code): $($again.Output)" }
+
+        foreach ($relative in $owned) {
+            $template = Join-Path $repoRoot ("templates\_shared\dot-claude" + $relative.Substring(".claude".Length))
+            if (-not (Test-FileContentEqual -ReferenceFile $template -DifferenceFile (Join-Path $run.Project $relative))) { return "$relative was not brought up to date" }
+            if ($again.Output -notmatch ("UPDATE\s+" + [regex]::Escape($relative))) { return "init did not report UPDATE for $relative" }
+            $backups = @(Get-ChildItem -LiteralPath $run.Project -Recurse -Force -File -Filter (Split-Path -Leaf $relative) | Where-Object { $_.FullName -match "harness-backup" })
+            if ($backups.Count -eq 0) { return "no backup of the old $relative" }
+        }
+
+        if ([System.IO.File]::ReadAllText((Join-Path $run.Project $projectOwned)) -notmatch "an older copy") { return "$projectOwned was replaced without -Force" }
+        if ($again.Output -notmatch ("SKIP\s+" + [regex]::Escape($projectOwned))) { return "init did not report SKIP for $projectOwned" }
+        return $true
+    }
+
     Test-Case -Name "C15 both AGENTS.md templates are at most 40 lines" -Check {
         foreach ($type in @("dotnet", "generic")) {
             $count = @(Get-Content -LiteralPath (Join-Path $repoRoot "templates\$type\AGENTS.md")).Count
