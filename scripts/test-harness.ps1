@@ -2690,9 +2690,57 @@ try {
         return $true
     }
 
+    Test-Case -Name "F12 the .NET verifier builds without a separate restore, passes --no-restore only with -SkipRestore, and reuses a pass per configuration" -Check {
+        $project = New-SpeedProject -NoGit -Files @{ "Modern.csproj" = '<Project Sdk="Microsoft.NET.Sdk" />' }
+        & (Join-Path $PSScriptRoot "init-project.ps1") -Type dotnet -Path $project -NoTrust 6>$null | Out-Null
+
+        $bin = Join-Path $project "..\$(Split-Path -Leaf $project)-bin"
+        $log = "$bin\dotnet.log"
+        $script:speedRoots += $bin
+        New-Item -ItemType Directory -Path $bin -Force | Out-Null
+        [System.IO.File]::WriteAllText("$bin\dotnet.cmd", "@echo dotnet %*>>`"$log`"`r`n")
+
+        $previousPath = $env:Path
+        $previousPreference = $ErrorActionPreference
+
+        function Invoke-StubDotnetVerify {
+            param([string[]]$Arguments = @())
+            $before = @(Get-Content -LiteralPath $log -ErrorAction SilentlyContinue).Count
+            $global:LASTEXITCODE = 0
+            $output = (& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $project ".claude\scripts\verify.ps1") @Arguments 2>&1 | Out-String)
+            return [PSCustomObject]@{ Code = $LASTEXITCODE; Output = $output; Calls = @(Get-Content -LiteralPath $log -ErrorAction SilentlyContinue | Select-Object -Skip $before) }
+        }
+
+        try {
+            $env:Path = $bin + ";" + ((($previousPath -split ";") | Where-Object { $_ -and ($_ -notmatch "dotnet") }) -join ";")
+            $ErrorActionPreference = "Continue"
+
+            $first = Invoke-StubDotnetVerify
+            if ($first.Code -ne 0) { return ("first run: exit $($first.Code): " + $first.Output) }
+            if (@($first.Calls | Where-Object { $_ -match "^dotnet restore" }).Count -gt 0) { return ("a separate restore ran: " + ($first.Calls -join " | ")) }
+            if (@($first.Calls | Where-Object { ($_ -match "^dotnet build ") -and ($_ -notmatch "--no-restore") }).Count -ne 1) { return ("expected one dotnet build that restores: " + ($first.Calls -join " | ")) }
+            if (@($first.Calls | Where-Object { $_ -match "^dotnet test .*--no-build" }).Count -ne 1) { return ("expected one dotnet test --no-build: " + ($first.Calls -join " | ")) }
+
+            if ((Invoke-StubDotnetVerify).Calls.Count -ne 0) { return "the second Debug run on unchanged sources called dotnet again" }
+
+            $release = Invoke-StubDotnetVerify -Arguments @("-Configuration", "Release")
+            if (@($release.Calls | Where-Object { $_ -match "^dotnet build .*Release" }).Count -ne 1) { return ("a Debug pass answered a Release run: " + ($release.Calls -join " | ")) }
+
+            $skip = Invoke-StubDotnetVerify -Arguments @("-SkipRestore", "-Force")
+            if (@($skip.Calls | Where-Object { $_ -match "^dotnet build .*--no-restore" }).Count -ne 1) { return ("-SkipRestore did not pass --no-restore: " + ($skip.Calls -join " | ")) }
+
+            return $true
+        }
+        finally {
+            $env:Path = $previousPath
+            $ErrorActionPreference = $previousPreference
+        }
+    }
+
     Test-Case -Name "F11 every verify.ps1 records its pass through Invoke-Verification and none writes the state itself" -Check {
         $scripts = @(
             (Join-Path $repoRoot "templates\generic\dot-claude\scripts\verify.ps1"),
+            (Join-Path $repoRoot "templates\dotnet\dot-claude\scripts\verify.ps1"),
             (Join-Path $repoRoot ".claude\scripts\verify.ps1")
         )
 

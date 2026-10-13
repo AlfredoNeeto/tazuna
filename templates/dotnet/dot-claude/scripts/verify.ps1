@@ -10,6 +10,9 @@
     Uses the dotnet CLI for SDK-style projects and Visual Studio's MSBuild plus
     vstest.console for .NET Framework ones, which the dotnet CLI cannot build.
 
+    When the sources are unchanged since the last full pass with the same
+    arguments, it reports that pass instead of repeating it.
+
     This is the verification a coding task must pass before it is considered
     complete. It is deliberately self-contained: it has no dependency on the
     harness repository, so it keeps working after the project is cloned
@@ -22,10 +25,13 @@
     Debug (default) or Release.
 
 .PARAMETER SkipRestore
-    Skip the restore step. Build and test then run with --no-restore.
+    Build and test with --no-restore.
 
 .PARAMETER SkipTests
     Skip the test step. Use only when explicitly verifying a build-only change.
+
+.PARAMETER Force
+    Run every step even when the sources already passed.
 
 .EXAMPLE
     .\.claude\scripts\verify.ps1
@@ -45,78 +51,17 @@ param(
 
     [switch]$SkipRestore,
 
-    [switch]$SkipTests
+    [switch]$SkipTests,
+
+    [switch]$Force
 )
 
 $ErrorActionPreference = "Stop"
 
-# Invoke-Step, Test-GitWorkTree, Get-SourceFingerprint and
-# Get-VerificationStateFile live here, beside this script, so the project
-# stays self-contained after being cloned somewhere the harness is absent.
+# Invoke-Verification, Invoke-Step and Get-ProjectFile live here, beside this
+# script, so the project stays self-contained after being cloned somewhere the
+# harness is absent.
 Import-Module (Join-Path $PSScriptRoot "VerifyCommon.psm1") -Force
-
-# Directories that never contain the sources we are looking for. Searching
-# them is slow and, worse, build output can contain copies of project files.
-$excludedDirectories = @(
-    "bin", "obj", "node_modules", ".git", ".vs", "packages",
-    "artifacts", "TestResults"
-)
-
-function Test-ExcludedPath {
-    <#
-        True when the path sits under one of $excludedDirectories, relative to
-        Root. Compares path segments rather than matching a regex, so no
-        backslash escaping is involved and a repository that happens to live
-        under a directory called "packages" is not misjudged.
-    #>
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$FullPath,
-
-        [Parameter(Mandatory = $true)]
-        [string]$Root
-    )
-
-    $separator = [System.IO.Path]::DirectorySeparatorChar
-    $rootFull = [System.IO.Path]::GetFullPath($Root).TrimEnd($separator)
-    $pathFull = [System.IO.Path]::GetFullPath($FullPath)
-
-    if (-not $pathFull.StartsWith($rootFull, [System.StringComparison]::OrdinalIgnoreCase)) {
-        return $false
-    }
-
-    $relative = $pathFull.Substring($rootFull.Length).Trim($separator)
-
-    foreach ($segment in $relative.Split($separator)) {
-        if ($excludedDirectories -contains $segment) {
-            return $true
-        }
-    }
-
-    return $false
-}
-
-function Get-SourceFile {
-    <#
-        Finds files matching an extension set, skipping build output.
-    #>
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Root,
-
-        [Parameter(Mandatory = $true)]
-        [string[]]$Extension,
-
-        [switch]$Recurse
-    )
-
-    $items = Get-ChildItem -LiteralPath $Root -File -Recurse:$Recurse -ErrorAction SilentlyContinue
-
-    return @($items | Where-Object {
-        ($Extension -contains $_.Extension) -and
-        -not (Test-ExcludedPath -FullPath $_.FullName -Root $Root)
-    })
-}
 
 function Test-LegacyProjectFile {
     <#
@@ -235,29 +180,28 @@ function Get-TestAssembly {
 
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 
-Push-Location $projectRoot
+exit (Invoke-Verification -ProjectRoot $projectRoot -Parameters $PSBoundParameters -Body {
 
-try {
-    Write-Host ""
-    Write-Host "Verification Harness"
-    Write-Host "===================="
-    Write-Host ""
-    Write-Host "Project root:  $projectRoot"
     Write-Host "Configuration: $Configuration"
+
+    # why: one listing from git serves every lookup below; each recursive Get-ChildItem
+    # used to walk bin, obj and node_modules in full.
+    $files = @(Get-ProjectFile -ProjectRoot $projectRoot)
+    $solutionFiles = @($files | Where-Object { ($_ -like "*.sln") -or ($_ -like "*.slnx") })
+    $projectFiles = @($files | Where-Object { $_ -like "*.csproj" })
 
     if (-not $Target) {
 
         # Prefer a solution at the repository root, then a solution anywhere,
-        # then a single project. Solutions and projects are both searched
-        # recursively so a src/ layout is not silently missed.
-        $solutions = @(Get-SourceFile -Root $projectRoot -Extension ".sln", ".slnx")
+        # then a single project, so a src/ layout is not silently missed.
+        $solutions = @($solutionFiles | Where-Object { $_ -notlike "*\*" })
 
         if ($solutions.Count -eq 0) {
-            $solutions = @(Get-SourceFile -Root $projectRoot -Extension ".sln", ".slnx" -Recurse)
+            $solutions = $solutionFiles
         }
 
         if ($solutions.Count -eq 1) {
-            $Target = $solutions[0].FullName
+            $Target = Join-Path $projectRoot $solutions[0]
         }
         elseif ($solutions.Count -gt 1) {
 
@@ -265,31 +209,27 @@ try {
             Write-Host "Multiple solution files were found:"
 
             foreach ($solution in $solutions) {
-                Write-Host "  - $($solution.FullName)"
+                Write-Host "  - $(Join-Path $projectRoot $solution)"
+            }
+
+            throw "Specify the target explicitly with -Target."
+        }
+        elseif ($projectFiles.Count -eq 1) {
+            $Target = Join-Path $projectRoot $projectFiles[0]
+        }
+        elseif ($projectFiles.Count -gt 1) {
+
+            Write-Host ""
+            Write-Host "No solution file was found, and multiple projects exist:"
+
+            foreach ($project in $projectFiles) {
+                Write-Host "  - $(Join-Path $projectRoot $project)"
             }
 
             throw "Specify the target explicitly with -Target."
         }
         else {
-            $projects = @(Get-SourceFile -Root $projectRoot -Extension ".csproj" -Recurse)
-
-            if ($projects.Count -eq 1) {
-                $Target = $projects[0].FullName
-            }
-            elseif ($projects.Count -gt 1) {
-
-                Write-Host ""
-                Write-Host "No solution file was found, and multiple projects exist:"
-
-                foreach ($project in $projects) {
-                    Write-Host "  - $($project.FullName)"
-                }
-
-                throw "Specify the target explicitly with -Target."
-            }
-            else {
-                throw "No .NET solution or project was found under $projectRoot."
-            }
+            throw "No .NET solution or project was found under $projectRoot."
         }
     }
 
@@ -305,7 +245,7 @@ try {
     # the toolchain is chosen once here and every step follows it. One legacy
     # project is enough: MSBuild builds SDK-style projects as well, while
     # `dotnet build` fails on the whole solution the moment one project is old.
-    $allProjects = @(Get-SourceFile -Root $projectRoot -Extension ".csproj" -Recurse)
+    $allProjects = @($projectFiles | ForEach-Object { Get-Item -LiteralPath (Join-Path $projectRoot $_) })
     $legacyProjects = @($allProjects | Where-Object { Test-LegacyProjectFile -Path $_.FullName })
 
     if ($legacyProjects.Count -gt 0) {
@@ -394,14 +334,13 @@ try {
             throw "The .NET SDK was not found in PATH."
         }
 
-        if (-not $SkipRestore) {
-            Invoke-Step -Name "dotnet restore" -Action {
-                dotnet restore "$Target"
-            }
-        }
+        # why: dotnet build restores on its own; a separate dotnet restore cost one more
+        # MSBuild evaluation of every project for the same result.
+        $restore = @()
+        if ($SkipRestore) { $restore = @("--no-restore") }
 
         Invoke-Step -Name "dotnet build" -Action {
-            dotnet build "$Target" --configuration $Configuration --no-restore
+            dotnet build "$Target" --configuration $Configuration @restore
         }
 
         if (-not $SkipTests) {
@@ -410,63 +349,4 @@ try {
             }
         }
     }
-
-    if ((Get-Command git -ErrorAction SilentlyContinue) -and (Test-GitWorkTree -Path $projectRoot)) {
-
-        Invoke-Step -Name "git diff --check" -Action {
-            git diff --check
-        }
-
-        Write-Host ""
-        Write-Host "Working tree:"
-        Write-Host ""
-
-        git status --short
-    }
-    else {
-        Write-Host ""
-        Write-Host "SKIP: git checks (not a git work tree)"
-    }
-
-    # Record that this exact set of sources passed, so a Stop hook can tell
-    # "verified" from "never run". -SkipTests is recorded honestly: a partial
-    # run must not satisfy a gate that means "the tests pass".
-    $stateFile = Get-VerificationStateFile -ProjectRoot $projectRoot
-    $stateDirectory = Split-Path -Parent $stateFile
-
-    if (-not (Test-Path -LiteralPath $stateDirectory)) {
-        New-Item -ItemType Directory -Path $stateDirectory -Force | Out-Null
-    }
-
-    $state = [PSCustomObject]@{
-        fingerprint   = Get-SourceFingerprint -ProjectRoot $projectRoot
-        target        = $Target
-        configuration = $Configuration
-        testsRan      = (-not $SkipTests)
-        completedAt   = (Get-Date).ToString("o")
-    }
-
-    $state | ConvertTo-Json | Set-Content -LiteralPath $stateFile -Encoding UTF8
-
-    Write-Host ""
-    Write-Host "===================="
-    Write-Host "VERIFICATION PASSED"
-    Write-Host "===================="
-    Write-Host ""
-}
-catch {
-    Write-Host ""
-    Write-Host "===================="
-    Write-Host "VERIFICATION FAILED"
-    Write-Host "===================="
-    Write-Host ""
-    Write-Host $_.Exception.Message
-    Write-Host ""
-
-    exit 1
-}
-finally {
-    Pop-Location
-}
-
-exit 0
+})
