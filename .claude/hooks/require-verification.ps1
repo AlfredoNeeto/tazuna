@@ -278,7 +278,9 @@ try {
             Exit-Allow
         }
 
-        if ($payload.cwd) {
+        # why: the session's project is CLAUDE_PROJECT_DIR. cwd follows every `cd`, and from a
+        # subdirectory the gate would find no verify.ps1 and let an unverified turn end.
+        if ($payload.cwd -and (-not $env:CLAUDE_PROJECT_DIR)) {
             $projectRoot = [string]$payload.cwd
         }
 

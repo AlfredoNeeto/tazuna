@@ -40,7 +40,8 @@ try {
             exit 0
         }
 
-        if ($payload.cwd) {
+        # why: the baseline belongs to the session's project, CLAUDE_PROJECT_DIR, not to wherever cwd points.
+        if ($payload.cwd -and (-not $env:CLAUDE_PROJECT_DIR)) {
             $projectRoot = [string]$payload.cwd
         }
     }

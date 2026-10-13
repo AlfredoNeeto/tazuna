@@ -10,6 +10,32 @@
 
 Set-StrictMode -Version 2.0
 
+# why: build output, dependencies and machine-local state are never source, and they
+# are the expensive part of any walk.
+$script:excludedDirectories = @(
+    "bin", "obj", "node_modules", ".git", ".vs", ".vscode", ".idea",
+    "packages", "artifacts", "TestResults", "dist", "build", "target",
+    "out", "coverage", ".next", ".nuxt", "__pycache__", ".venv", "venv",
+    ".harness-backup", "state"
+)
+
+# why: git's list is the source except for the state this harness and the toolkit write into the
+# project; it changes on every run, and a project's .gitignore does not always name it.
+$script:machineStatePattern = '^\.claude\\state(\\|$)|(^|\\)(\.tlc|\.harness-backup)(\\|$)'
+
+# Binaries, archives, media and machine-local cruft. Everything else counts.
+$script:excludedExtensions = @(
+    ".dll", ".exe", ".pdb", ".so", ".dylib", ".a", ".lib", ".o", ".obj",
+    ".zip", ".tar", ".gz", ".bz2", ".7z", ".rar", ".nupkg", ".snupkg",
+    ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".ico", ".webp", ".mp4", ".mp3",
+    ".pdf", ".docx", ".xlsx", ".pptx", ".ttf", ".woff", ".woff2", ".eot",
+    ".cache", ".user", ".suo", ".userprefs", ".log", ".tmp", ".bak", ".swp"
+)
+
+# why: a hash set answers per file in constant time; -contains scanned the whole list, and ignored case as this comparer does.
+$script:excludedExtensionSet = New-Object "System.Collections.Generic.HashSet[string]" (
+    [string[]]$script:excludedExtensions, [System.StringComparer]::OrdinalIgnoreCase)
+
 function Invoke-Step {
     <#
     .SYNOPSIS
@@ -104,6 +130,137 @@ function Get-VerificationStateFile {
     return (Join-Path (Join-Path $ProjectRoot ".claude") (Join-Path "state" "last-verification.json"))
 }
 
+function Get-GitListedFile {
+    <#
+        What git tracks or would track under Root, relative to it, or $null
+        when git cannot answer.
+
+        A Process with a UTF-8 reader rather than `& git`: PowerShell decodes a
+        native command's output with the console's code page, and a hook may
+        run with no console at all. A non-ASCII name decoded two ways would
+        give the hook and verify.ps1 two fingerprints for the same tree, and
+        the gate would never match its own verification.
+    #>
+    param([string]$Root)
+
+    try {
+        $start = New-Object System.Diagnostics.ProcessStartInfo
+        $start.FileName = "git"
+        # why: "\." keeps a drive root ("C:") from meaning "the current directory on C:".
+        $start.Arguments = "-C `"$Root\.`" ls-files -z --cached --others --exclude-standard"
+        $start.UseShellExecute = $false
+        $start.CreateNoWindow = $true
+        $start.RedirectStandardOutput = $true
+        $start.StandardOutputEncoding = New-Object System.Text.UTF8Encoding $false
+        # why: a "fatal: not a git repository" from a broken .git would otherwise print in every hook.
+        $start.RedirectStandardError = $true
+
+        $process = [System.Diagnostics.Process]::Start($start)
+        # hazard: stderr is drained in the background; a full stderr pipe would block git, and this read with it.
+        $errors = $process.StandardError.ReadToEndAsync()
+        $output = $process.StandardOutput.ReadToEnd()
+        $process.WaitForExit()
+        $null = $errors.Result
+
+        if ($process.ExitCode -ne 0) { return $null }
+
+        $separator = [string][System.IO.Path]::DirectorySeparatorChar
+        $paths = New-Object System.Collections.Generic.List[string]
+
+        foreach ($entry in $output.Split([char]0)) {
+            if ($entry) { $paths.Add($entry.Replace("/", $separator)) }
+        }
+
+        return , $paths.ToArray()
+    }
+    catch {
+        return $null
+    }
+}
+
+function Get-WalkedFile {
+    <#
+        Files under Start, relative to Root. Never enters an excluded directory
+        or a link, so node_modules costs nothing and a junction cannot loop.
+    #>
+    param([string]$Root, [string]$Start)
+
+    $pending = New-Object System.Collections.Stack
+    $pending.Push($Start)
+
+    while ($pending.Count -gt 0) {
+
+        $directory = $pending.Pop()
+
+        try {
+            foreach ($child in [System.IO.Directory]::GetDirectories($directory)) {
+
+                $isLink = (([System.IO.File]::GetAttributes($child) -band [System.IO.FileAttributes]::ReparsePoint) -ne 0)
+
+                if ((-not $isLink) -and ($script:excludedDirectories -notcontains [System.IO.Path]::GetFileName($child))) {
+                    $pending.Push($child)
+                }
+            }
+
+            foreach ($file in [System.IO.Directory]::GetFiles($directory)) {
+                $file.Substring($Root.Length).TrimStart([System.IO.Path]::DirectorySeparatorChar)
+            }
+        }
+        catch {
+            # why: an unreadable directory is skipped, as Get-ChildItem -ErrorAction SilentlyContinue did.
+        }
+    }
+}
+
+function Get-ProjectFile {
+    <#
+    .SYNOPSIS
+        The project's files, relative to ProjectRoot, in ordinal order.
+    .DESCRIPTION
+        In a git work tree these are the files git tracks or would track, which
+        git answers from its index in milliseconds; .gitignore already says what
+        is not source, and a tracked build/ directory is source. Only the state
+        this harness writes (.claude/state, .tlc, .harness-backup) is dropped.
+        The walk this replaced enumerated node_modules, bin and obj in full
+        before discarding them: 11.6 s on a 35,000-file checkout, paid at every
+        Stop.
+
+        Outside git, or when git cannot answer, the tree is walked without
+        entering an excluded directory. git lists a submodule, or a nested
+        repository it does not track, as one entry for its directory.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ProjectRoot
+    )
+
+    $separator = [System.IO.Path]::DirectorySeparatorChar
+    $rootFull = [System.IO.Path]::GetFullPath($ProjectRoot).TrimEnd($separator)
+
+    $listed = $null
+
+    if (Test-GitWorkTree -Path $rootFull) {
+        $listed = Get-GitListedFile -Root $rootFull
+    }
+
+    $files = New-Object System.Collections.Generic.List[string]
+
+    if ($null -eq $listed) {
+        foreach ($relative in (Get-WalkedFile -Root $rootFull -Start $rootFull)) { $files.Add($relative) }
+    }
+    else {
+        foreach ($relative in $listed) {
+            if ($relative -notmatch $script:machineStatePattern) { $files.Add($relative) }
+        }
+    }
+
+    $sorted = $files.ToArray()
+    [System.Array]::Sort($sorted, [System.StringComparer]::Ordinal)
+
+    return $sorted
+}
+
 function Get-SourceFingerprint {
     <#
     .SYNOPSIS
@@ -119,7 +276,8 @@ function Get-SourceFingerprint {
         and a gate that cannot see a change permits ending the turn without
         verifying it. That is the same failure mode as a gate that never fires.
         Excluding build output and binaries fails the other way: something
-        unexpected is hashed, which is harmless.
+        unexpected is hashed, which is harmless. Get-ProjectFile decides which
+        files exist; this drops binaries and anything over the size limit.
     #>
     [CmdletBinding()]
     param(
@@ -130,40 +288,7 @@ function Get-SourceFingerprint {
         [int]$MaximumFileSizeBytes = 5242880
     )
 
-    $excludedDirectories = @(
-        "bin", "obj", "node_modules", ".git", ".vs", ".vscode", ".idea",
-        "packages", "artifacts", "TestResults", "dist", "build", "target",
-        "out", "coverage", ".next", ".nuxt", "__pycache__", ".venv", "venv",
-        ".harness-backup", "state"
-    )
-
-    # Binaries, archives, media and machine-local cruft. Everything else counts.
-    $excludedExtensions = @(
-        ".dll", ".exe", ".pdb", ".so", ".dylib", ".a", ".lib", ".o", ".obj",
-        ".zip", ".tar", ".gz", ".bz2", ".7z", ".rar", ".nupkg", ".snupkg",
-        ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".ico", ".webp", ".mp4", ".mp3",
-        ".pdf", ".docx", ".xlsx", ".pptx", ".ttf", ".woff", ".woff2", ".eot",
-        ".cache", ".user", ".suo", ".userprefs", ".log", ".tmp", ".bak", ".swp"
-    )
-
-    $separator = [System.IO.Path]::DirectorySeparatorChar
-    $rootFull = [System.IO.Path]::GetFullPath($ProjectRoot).TrimEnd($separator)
-
-    $files = Get-ChildItem -LiteralPath $rootFull -File -Recurse -Force -ErrorAction SilentlyContinue |
-        Where-Object {
-
-            if ($excludedExtensions -contains $_.Extension.ToLowerInvariant()) { return $false }
-            if ($_.Length -gt $MaximumFileSizeBytes) { return $false }
-
-            $relative = $_.FullName.Substring($rootFull.Length).Trim($separator)
-
-            foreach ($segment in $relative.Split($separator)) {
-                if ($excludedDirectories -contains $segment) { return $false }
-            }
-
-            return $true
-        } |
-        Sort-Object FullName
+    $rootFull = [System.IO.Path]::GetFullPath($ProjectRoot).TrimEnd([System.IO.Path]::DirectorySeparatorChar)
 
     $builder = New-Object System.Text.StringBuilder
 
@@ -176,14 +301,32 @@ function Get-SourceFingerprint {
 
     try {
 
-        foreach ($file in $files) {
+        # ponytail: reads every listed file, about 4 s per 20,000 on this hardware. Past
+        # that, take unchanged files' ids from `git ls-files -s` and hash only what
+        # `git ls-files -m -o` reports.
+        foreach ($entry in (Get-ProjectFile -ProjectRoot $rootFull)) {
 
-            $relative = $file.FullName.Substring($rootFull.Length).Trim($separator)
+            $paths = @($entry)
+            $full = [System.IO.Path]::Combine($rootFull, $entry)
 
-            $hash = [System.BitConverter]::ToString(
-                $algorithm.ComputeHash([System.IO.File]::ReadAllBytes($file.FullName))).Replace("-", "")
+            # invariant: a directory entry is a submodule or a nested repository; walking
+            # it keeps a change inside it visible to the gate.
+            if ((-not [System.IO.File]::Exists($full)) -and [System.IO.Directory]::Exists($full)) {
+                $paths = @(Get-WalkedFile -Root $rootFull -Start $full)
+            }
 
-            $null = $builder.Append($relative).Append("|").Append($hash).Append("`n")
+            foreach ($relative in $paths) {
+
+                $file = [System.IO.FileInfo]::new([System.IO.Path]::Combine($rootFull, $relative))
+
+                if ((-not $file.Exists) -or ($file.Length -gt $MaximumFileSizeBytes)) { continue }
+                if ($script:excludedExtensionSet.Contains($file.Extension)) { continue }
+
+                $hash = [System.BitConverter]::ToString(
+                    $algorithm.ComputeHash([System.IO.File]::ReadAllBytes($file.FullName))).Replace("-", "")
+
+                $null = $builder.Append($relative).Append("|").Append($hash).Append("`n")
+            }
         }
 
         if ($builder.Length -eq 0) {
@@ -198,9 +341,139 @@ function Get-SourceFingerprint {
     }
 }
 
+function Invoke-Verification {
+    <#
+    .SYNOPSIS
+        Runs a project's verification and records a pass for the Stop gate.
+    .DESCRIPTION
+        Body runs the project's steps with Invoke-Step and throws to fail. This
+        prints VERIFICATION PASSED or VERIFICATION FAILED and returns the exit
+        code, 0 or 1, for verify.ps1 to exit with.
+
+        A pass on these exact sources, with tests and the same arguments, is
+        reported instead of repeated: the Stop gate already accepts it as proof
+        for these sources, and the tlc Verifier re-runs verify.ps1 on the tree
+        its author just verified. -Force runs it anyway.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ProjectRoot,
+
+        # The caller's $PSBoundParameters. -SkipTests and -Force are read from
+        # it, and every other argument is part of the cache key.
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [System.Collections.IDictionary]$Parameters,
+
+        [Parameter(Mandatory = $true)]
+        [scriptblock]$Body
+    )
+
+    $skipTests = $Parameters.ContainsKey("SkipTests") -and [bool]$Parameters["SkipTests"]
+    $force = $Parameters.ContainsKey("Force") -and [bool]$Parameters["Force"]
+
+    # invariant: a Release run is never answered by a Debug pass; any argument that is
+    # not -SkipTests or -Force keys the cache.
+    $arguments = (@($Parameters.Keys | Where-Object { ($_ -ne "SkipTests") -and ($_ -ne "Force") } | Sort-Object |
+            ForEach-Object { "-" + $_ + " " + $Parameters[$_] }) -join " ")
+
+    $stateFile = Get-VerificationStateFile -ProjectRoot $ProjectRoot
+
+    Push-Location $ProjectRoot
+
+    try {
+        Write-Host ""
+        Write-Host "Verification Harness"
+        Write-Host "===================="
+        Write-Host ""
+        Write-Host "Project root: $ProjectRoot"
+
+        $cached = $null
+
+        if ((-not $force) -and (Test-Path -LiteralPath $stateFile)) {
+            try {
+                $last = Get-Content -LiteralPath $stateFile -Raw | ConvertFrom-Json
+
+                if (($last.arguments -eq $arguments) -and ($last.testsRan -eq $true) -and
+                    ($last.fingerprint -eq (Get-SourceFingerprint -ProjectRoot $ProjectRoot))) {
+                    $cached = $last.completedAt
+                }
+            }
+            catch {
+                # why: a state file that does not parse, or predates "arguments", means no pass on record, not a failure.
+                $cached = $null
+            }
+        }
+
+        if ($cached) {
+            Write-Host ""
+            Write-Host "Unchanged since the run that passed at $cached. -Force runs it again."
+        }
+        else {
+            & $Body | Out-Host
+
+            if ((Get-Command git -ErrorAction SilentlyContinue) -and (Test-GitWorkTree -Path $ProjectRoot)) {
+
+                Invoke-Step -Name "git diff --check" -Action { git diff --check } | Out-Host
+
+                Write-Host ""
+                Write-Host "Working tree:"
+                Write-Host ""
+
+                git status --short | Out-Host
+            }
+            else {
+                Write-Host ""
+                Write-Host "SKIP: git checks (not a git work tree)"
+            }
+
+            # why: this records that this exact set of sources passed, so a Stop hook can
+            # tell "verified" from "never run". -SkipTests is recorded honestly: a partial
+            # run must not satisfy a gate that means "the tests pass".
+            $stateDirectory = Split-Path -Parent $stateFile
+
+            if (-not (Test-Path -LiteralPath $stateDirectory)) {
+                New-Item -ItemType Directory -Path $stateDirectory -Force | Out-Null
+            }
+
+            [PSCustomObject]@{
+                fingerprint = Get-SourceFingerprint -ProjectRoot $ProjectRoot
+                arguments   = $arguments
+                testsRan    = (-not $skipTests)
+                completedAt = (Get-Date).ToString("o")
+            } | ConvertTo-Json | Set-Content -LiteralPath $stateFile -Encoding UTF8
+        }
+
+        Write-Host ""
+        Write-Host "===================="
+        Write-Host "VERIFICATION PASSED"
+        Write-Host "===================="
+        Write-Host ""
+
+        return 0
+    }
+    catch {
+        Write-Host ""
+        Write-Host "===================="
+        Write-Host "VERIFICATION FAILED"
+        Write-Host "===================="
+        Write-Host ""
+        Write-Host $_.Exception.Message
+        Write-Host ""
+
+        return 1
+    }
+    finally {
+        Pop-Location
+    }
+}
+
 Export-ModuleMember -Function @(
     "Invoke-Step",
     "Test-GitWorkTree",
     "Get-VerificationStateFile",
-    "Get-SourceFingerprint"
+    "Get-ProjectFile",
+    "Get-SourceFingerprint",
+    "Invoke-Verification"
 )
