@@ -7,6 +7,9 @@
     that reports a non-zero exit code. Prints VERIFICATION PASSED or
     VERIFICATION FAILED and exits non-zero on failure.
 
+    When the sources are unchanged since the last full pass, it reports that
+    pass instead of repeating it.
+
     ---------------------------------------------------------------------
     THIS FILE MUST BE COMPLETED FOR THIS PROJECT.
 
@@ -19,19 +22,22 @@
 .PARAMETER SkipTests
     Skip steps marked with IsTest = $true.
 
+.PARAMETER Force
+    Run every step even when the sources already passed.
+
 .EXAMPLE
     .\.claude\scripts\verify.ps1
 #>
 [CmdletBinding()]
 param(
-    [switch]$SkipTests
+    [switch]$SkipTests,
+    [switch]$Force
 )
 
 $ErrorActionPreference = "Stop"
 
-# Invoke-Step, Test-GitWorkTree, Get-SourceFingerprint and
-# Get-VerificationStateFile live here, beside this script, so the project
-# stays self-contained after being cloned somewhere the harness is absent.
+# Invoke-Verification and Invoke-Step live here, beside this script, so the
+# project stays self-contained after being cloned somewhere the harness is absent.
 Import-Module (Join-Path $PSScriptRoot "VerifyCommon.psm1") -Force
 
 # ---------------------------------------------------------------------------
@@ -152,14 +158,7 @@ function Get-DetectedSteps {
 
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 
-Push-Location $projectRoot
-
-try {
-    Write-Host ""
-    Write-Host "Verification Harness"
-    Write-Host "===================="
-    Write-Host ""
-    Write-Host "Project root: $projectRoot"
+exit (Invoke-Verification -ProjectRoot $projectRoot -Parameters $PSBoundParameters -Body {
 
     if ($VerificationSteps.Count -eq 0) {
 
@@ -178,13 +177,7 @@ try {
 
     foreach ($step in $VerificationSteps) {
 
-        $isTest = $false
-
-        if ($step.ContainsKey("IsTest")) {
-            $isTest = [bool]$step.IsTest
-        }
-
-        if ($isTest -and $SkipTests) {
+        if ($step.ContainsKey("IsTest") -and [bool]$step.IsTest -and $SkipTests) {
             Write-Host ""
             Write-Host "SKIP: $($step.Name) (-SkipTests)"
             continue
@@ -192,62 +185,4 @@ try {
 
         Invoke-Step -Name $step.Name -Action $step.Command
     }
-
-    if ((Get-Command git -ErrorAction SilentlyContinue) -and (Test-GitWorkTree -Path $projectRoot)) {
-
-        Invoke-Step -Name "git diff --check" -Action {
-            git diff --check
-        }
-
-        Write-Host ""
-        Write-Host "Working tree:"
-        Write-Host ""
-
-        git status --short
-    }
-    else {
-        Write-Host ""
-        Write-Host "SKIP: git checks (not a git work tree)"
-    }
-
-    # Record that this exact set of sources passed, so a Stop hook can tell
-    # "verified" from "never run". -SkipTests is recorded honestly: a partial
-    # run must not satisfy a gate that means "the tests pass".
-    $stateFile = Get-VerificationStateFile -ProjectRoot $projectRoot
-    $stateDirectory = Split-Path -Parent $stateFile
-
-    if (-not (Test-Path -LiteralPath $stateDirectory)) {
-        New-Item -ItemType Directory -Path $stateDirectory -Force | Out-Null
-    }
-
-    $state = [PSCustomObject]@{
-        fingerprint = Get-SourceFingerprint -ProjectRoot $projectRoot
-        target      = "VerificationSteps"
-        testsRan    = (-not $SkipTests)
-        completedAt = (Get-Date).ToString("o")
-    }
-
-    $state | ConvertTo-Json | Set-Content -LiteralPath $stateFile -Encoding UTF8
-
-    Write-Host ""
-    Write-Host "===================="
-    Write-Host "VERIFICATION PASSED"
-    Write-Host "===================="
-    Write-Host ""
-}
-catch {
-    Write-Host ""
-    Write-Host "===================="
-    Write-Host "VERIFICATION FAILED"
-    Write-Host "===================="
-    Write-Host ""
-    Write-Host $_.Exception.Message
-    Write-Host ""
-
-    exit 1
-}
-finally {
-    Pop-Location
-}
-
-exit 0
+})

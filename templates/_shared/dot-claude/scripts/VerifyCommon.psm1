@@ -333,10 +333,139 @@ function Get-SourceFingerprint {
     }
 }
 
+function Invoke-Verification {
+    <#
+    .SYNOPSIS
+        Runs a project's verification and records a pass for the Stop gate.
+    .DESCRIPTION
+        Body runs the project's steps with Invoke-Step and throws to fail. This
+        prints VERIFICATION PASSED or VERIFICATION FAILED and returns the exit
+        code, 0 or 1, for verify.ps1 to exit with.
+
+        A pass on these exact sources, with tests and the same arguments, is
+        reported instead of repeated: the Stop gate already accepts it as proof
+        for these sources, and the tlc Verifier re-runs verify.ps1 on the tree
+        its author just verified. -Force runs it anyway.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ProjectRoot,
+
+        # The caller's $PSBoundParameters. -SkipTests and -Force are read from
+        # it, and every other argument is part of the cache key.
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [System.Collections.IDictionary]$Parameters,
+
+        [Parameter(Mandatory = $true)]
+        [scriptblock]$Body
+    )
+
+    $skipTests = $Parameters.ContainsKey("SkipTests") -and [bool]$Parameters["SkipTests"]
+    $force = $Parameters.ContainsKey("Force") -and [bool]$Parameters["Force"]
+
+    # invariant: a Release run is never answered by a Debug pass; any argument that is
+    # not -SkipTests or -Force keys the cache.
+    $arguments = (@($Parameters.Keys | Where-Object { ($_ -ne "SkipTests") -and ($_ -ne "Force") } | Sort-Object |
+            ForEach-Object { "-" + $_ + " " + $Parameters[$_] }) -join " ")
+
+    $stateFile = Get-VerificationStateFile -ProjectRoot $ProjectRoot
+
+    Push-Location $ProjectRoot
+
+    try {
+        Write-Host ""
+        Write-Host "Verification Harness"
+        Write-Host "===================="
+        Write-Host ""
+        Write-Host "Project root: $ProjectRoot"
+
+        $cached = $null
+
+        if ((-not $force) -and (Test-Path -LiteralPath $stateFile)) {
+            try {
+                $last = Get-Content -LiteralPath $stateFile -Raw | ConvertFrom-Json
+
+                if (($last.arguments -eq $arguments) -and ($last.testsRan -eq $true) -and
+                    ($last.fingerprint -eq (Get-SourceFingerprint -ProjectRoot $ProjectRoot))) {
+                    $cached = $last.completedAt
+                }
+            }
+            catch {
+                # why: a state file that does not parse, or predates "arguments", means no pass on record, not a failure.
+                $cached = $null
+            }
+        }
+
+        if ($cached) {
+            Write-Host ""
+            Write-Host "Unchanged since the run that passed at $cached. -Force runs it again."
+        }
+        else {
+            & $Body | Out-Host
+
+            if ((Get-Command git -ErrorAction SilentlyContinue) -and (Test-GitWorkTree -Path $ProjectRoot)) {
+
+                Invoke-Step -Name "git diff --check" -Action { git diff --check } | Out-Host
+
+                Write-Host ""
+                Write-Host "Working tree:"
+                Write-Host ""
+
+                git status --short | Out-Host
+            }
+            else {
+                Write-Host ""
+                Write-Host "SKIP: git checks (not a git work tree)"
+            }
+
+            # why: this records that this exact set of sources passed, so a Stop hook can
+            # tell "verified" from "never run". -SkipTests is recorded honestly: a partial
+            # run must not satisfy a gate that means "the tests pass".
+            $stateDirectory = Split-Path -Parent $stateFile
+
+            if (-not (Test-Path -LiteralPath $stateDirectory)) {
+                New-Item -ItemType Directory -Path $stateDirectory -Force | Out-Null
+            }
+
+            [PSCustomObject]@{
+                fingerprint = Get-SourceFingerprint -ProjectRoot $ProjectRoot
+                arguments   = $arguments
+                testsRan    = (-not $skipTests)
+                completedAt = (Get-Date).ToString("o")
+            } | ConvertTo-Json | Set-Content -LiteralPath $stateFile -Encoding UTF8
+        }
+
+        Write-Host ""
+        Write-Host "===================="
+        Write-Host "VERIFICATION PASSED"
+        Write-Host "===================="
+        Write-Host ""
+
+        return 0
+    }
+    catch {
+        Write-Host ""
+        Write-Host "===================="
+        Write-Host "VERIFICATION FAILED"
+        Write-Host "===================="
+        Write-Host ""
+        Write-Host $_.Exception.Message
+        Write-Host ""
+
+        return 1
+    }
+    finally {
+        Pop-Location
+    }
+}
+
 Export-ModuleMember -Function @(
     "Invoke-Step",
     "Test-GitWorkTree",
     "Get-VerificationStateFile",
     "Get-ProjectFile",
-    "Get-SourceFingerprint"
+    "Get-SourceFingerprint",
+    "Invoke-Verification"
 )

@@ -2595,6 +2595,115 @@ try {
         if ((Get-SourceFingerprint -ProjectRoot $root) -eq $start) { return "editing $name left the fingerprint unchanged" }
         return $true
     }
+
+    function New-CountingProject {
+        # why: a step that only reports it ran shows whether verify.ps1 repeated the work or reused a pass.
+        $root = New-SpeedProject -NoGit -Files @{ "App.txt" = "a" }
+        & (Join-Path $PSScriptRoot "init-project.ps1") -Type generic -Path $root -NoTrust 6>$null | Out-Null
+
+        $verify = Join-Path $root ".claude\scripts\verify.ps1"
+        $declaration = '$VerificationSteps = @('
+        $step = '@{ Name = "count"; Command = { cmd /c "exit $([int]$env:HARNESS_STEP_EXIT)" }; IsTest = $true }'
+        $text = [System.IO.File]::ReadAllText($verify)
+        $at = $text.IndexOf($declaration) + $declaration.Length
+        [System.IO.File]::WriteAllText($verify, $text.Substring(0, $at) + $step + $text.Substring($at))
+
+        return $root
+    }
+
+    function Invoke-CountingVerify {
+        param([string]$Project, [string[]]$Arguments = @(), [int]$StepExit = 0)
+
+        $previous = $ErrorActionPreference
+        $savedExit = $env:HARNESS_STEP_EXIT
+
+        try {
+            $ErrorActionPreference = "Continue"
+            $env:HARNESS_STEP_EXIT = [string]$StepExit
+            $global:LASTEXITCODE = 0
+            $output = (& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Project ".claude\scripts\verify.ps1") @Arguments 2>&1 | Out-String)
+            return [PSCustomObject]@{ Code = $LASTEXITCODE; Output = $output; Ran = $output.Contains("==> count") }
+        }
+        finally {
+            $ErrorActionPreference = $previous
+            $env:HARNESS_STEP_EXIT = $savedExit
+        }
+    }
+
+    Test-Case -Name "F7 a second verify on unchanged sources passes without running a step; -Force and a change run it" -Check {
+        $project = New-CountingProject
+
+        $first = Invoke-CountingVerify -Project $project
+        if (($first.Code -ne 0) -or (-not $first.Ran)) { return ("first run: exit $($first.Code), ran=$($first.Ran): " + $first.Output) }
+
+        $second = Invoke-CountingVerify -Project $project
+        if ($second.Code -ne 0) { return "second run: exit $($second.Code)" }
+        if ($second.Ran) { return "the second run on unchanged sources ran the step again" }
+        if (($second.Output -notmatch "Unchanged since the run that passed at") -or ($second.Output -notmatch "VERIFICATION PASSED")) { return ("second run did not report the reused pass: " + $second.Output) }
+
+        if (-not (Invoke-CountingVerify -Project $project -Arguments @("-Force")).Ran) { return "-Force did not run the step" }
+
+        [System.IO.File]::WriteAllText((Join-Path $project "App.txt"), "changed")
+        if (-not (Invoke-CountingVerify -Project $project).Ran) { return "a changed source did not run the step" }
+
+        return $true
+    }
+
+    Test-Case -Name "F8 a pass recorded with -SkipTests does not answer a full verify" -Check {
+        $project = New-CountingProject
+
+        $partial = Invoke-CountingVerify -Project $project -Arguments @("-SkipTests")
+        if (($partial.Code -ne 0) -or $partial.Ran -or ($partial.Output -notmatch "SKIP: count")) { return ("-SkipTests run: exit $($partial.Code): " + $partial.Output) }
+
+        $full = Invoke-CountingVerify -Project $project
+        if (($full.Code -ne 0) -or (-not $full.Ran)) { return "the full run after -SkipTests reused the partial pass" }
+
+        return $true
+    }
+
+    Test-Case -Name "F9 a failing step prints VERIFICATION FAILED, exits 1 and records no pass" -Check {
+        $project = New-CountingProject
+
+        $failed = Invoke-CountingVerify -Project $project -StepExit 3
+        if ($failed.Code -ne 1) { return "exit $($failed.Code), expected 1" }
+        if (($failed.Output -notmatch "VERIFICATION FAILED") -or ($failed.Output -notmatch "count failed with exit code 3")) { return ("output: " + $failed.Output) }
+
+        $again = Invoke-CountingVerify -Project $project -StepExit 3
+        if (-not $again.Ran) { return "the run after a failure reused it as a pass" }
+
+        return $true
+    }
+
+    Test-Case -Name "F10 a pass with one set of arguments does not answer another" -Check {
+        $project = New-SpeedProject -NoGit -Files @{ "App.txt" = "a" }
+        $counter = Join-Path $project "..\$(Split-Path -Leaf $project).runs"
+        $script:speedRoots += $counter
+
+        foreach ($configuration in @("Debug", "Release", "Release")) {
+            $null = Invoke-Verification -ProjectRoot $project -Parameters @{ Configuration = $configuration } -Body {
+                Add-Content -LiteralPath $counter -Value $configuration
+            } 6>$null
+        }
+
+        $runs = @(Get-Content -LiteralPath $counter)
+        if (($runs -join ",") -ne "Debug,Release") { return ("runs: " + ($runs -join ",") + ", expected Debug,Release") }
+        return $true
+    }
+
+    Test-Case -Name "F11 every verify.ps1 records its pass through Invoke-Verification and none writes the state itself" -Check {
+        $scripts = @(
+            (Join-Path $repoRoot "templates\generic\dot-claude\scripts\verify.ps1"),
+            (Join-Path $repoRoot ".claude\scripts\verify.ps1")
+        )
+
+        $wrong = @($scripts | Where-Object {
+                $text = [System.IO.File]::ReadAllText($_)
+                ($text -notmatch "Invoke-Verification") -or ($text -match "Get-VerificationStateFile")
+            })
+
+        if ($wrong.Count -eq 0) { return $true }
+        return ("not on the shared runner: " + ($wrong -join ", "))
+    }
 }
 finally {
     foreach ($root in $script:speedRoots) { Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue }
