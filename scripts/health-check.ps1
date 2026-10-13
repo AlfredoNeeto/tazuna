@@ -47,6 +47,9 @@ $source = Join-Path $repoRoot "user"
 $configDir = Get-ClaudeConfigDir
 $manifest = Get-HarnessManifest
 
+# why: every skill user/ ships is required, so a new one is checked without a list to remember.
+$harnessSkills = @($manifest.AgentSkills) + @(Get-ChildItem -LiteralPath (Join-Path $source "skills") -Directory | ForEach-Object { $_.Name })
+
 $script:failures = @()
 $script:warnings = @()
 
@@ -339,7 +342,7 @@ if ($null -ne $claude) {
         Add-Failure "no tlc-exec hook in settings.json - the harness-toolkit is not wired; run: tazuna setup"
     }
 
-    foreach ($skill in (@($manifest.AgentSkills) + @("review-change"))) {
+    foreach ($skill in $harnessSkills) {
 
         if (Test-Path -LiteralPath (Join-Path $configDir (Join-Path "skills" (Join-Path $skill "SKILL.md")))) {
             Add-Pass "skill $skill"
@@ -574,7 +577,7 @@ if ($hasCursor) {
 
     $cursorSkills = Join-Path $cursorDir "skills"
 
-    foreach ($skill in (@($manifest.AgentSkills) + @("review-change"))) {
+    foreach ($skill in $harnessSkills) {
 
         if (Test-Path -LiteralPath (Join-Path $cursorSkills (Join-Path $skill "SKILL.md"))) {
             Add-Pass "Cursor skill $skill"

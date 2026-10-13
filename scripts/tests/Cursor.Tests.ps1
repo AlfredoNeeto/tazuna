@@ -346,6 +346,13 @@ try {
         return $true
     }
 
+    Test-Case -Name "SK2 setup installs fix-bug and ship for Cursor too" -Check {
+        $run = Get-CursorSetupRun -Key "both" -Cursor
+        if ($run.Code -ne 0) { return "exit $($run.Code): $($run.Output)" }
+        $missing = @(@("fix-bug", "ship") | Where-Object { -not (Test-Path -LiteralPath (Join-Path $run.Cursor "skills\$_\SKILL.md")) })
+        if ($missing.Count -gt 0) { return ("not installed for Cursor: " + ($missing -join ", ")) }
+        return $true
+    }
     Test-Case -Name "U16 setup with Claude Code and Cursor installs the six skills for both in one call, -a claude-code cursor -g" -Check {
         $run = Get-CursorSetupRun -Key "both" -Cursor
         if ($run.Code -ne 0) { return "exit $($run.Code): $($run.Output)" }

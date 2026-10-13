@@ -84,6 +84,30 @@ try {
         if ($run.Output -notmatch "plugin install ponytail@ponytail exited 1") { return ("the failure does not name the plugin: " + $run.Output) }
         return $true
     }
+    Test-Case -Name "SK1 setup installs fix-bug and ship for Claude Code, and doctor names either one missing" -Check {
+        $kit = @("fix-bug", "ship")
+
+        $claude = Get-SetupRun -Key "fresh"
+        $missing = @($kit | Where-Object { -not (Test-Path -LiteralPath (Join-Path $claude.Config "skills\$_\SKILL.md")) })
+        if ($missing.Count -gt 0) { return ("not installed for Claude Code: " + ($missing -join ", ")) }
+
+
+        $moved = Join-Path $claude.Root "moved-kit"
+        New-Item -ItemType Directory -Path $moved -Force | Out-Null
+        foreach ($skill in $kit) { Move-Item -LiteralPath (Join-Path $claude.Config "skills\$skill") -Destination $moved }
+
+        try {
+            $doctor = Invoke-WithStubs -Root $claude.Root -Script (Join-Path $scriptsRoot "health-check.ps1")
+        }
+        finally {
+            foreach ($skill in $kit) { Move-Item -LiteralPath (Join-Path $moved $skill) -Destination (Join-Path $claude.Config "skills") }
+        }
+
+        if ($doctor.Code -eq 0) { return "doctor passed without fix-bug and ship" }
+        $unnamed = @($kit | Where-Object { $doctor.Output -notmatch ("skill " + [regex]::Escape($_) + " is missing") })
+        if ($unnamed.Count -gt 0) { return ("doctor did not name: " + ($unnamed -join ", ")) }
+        return $true
+    }
     Test-Case -Name "C1 doctor fails naming each of the seven skills when absent" -Check {
         $run = Get-SetupRun -Key "fresh"
         $skills = @($manifest.AgentSkills) + "review-change"
