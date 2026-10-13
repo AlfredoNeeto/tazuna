@@ -15,7 +15,11 @@
 
 .PARAMETER Only
     Run only the cases whose name starts with this id and a space, e.g. -Only C12.
-    Fails when no case ran, so a missing test cannot pass as green.
+    Fails when no case ran, so a missing test cannot pass as green. Runs in one process.
+
+.PARAMETER Shard
+    Internal. Without -Only the script starts four copies of itself, -Shard 0 to 3,
+    and each runs a quarter of the sections.
 
 .EXAMPLE
     .\scripts\test-harness.ps1
@@ -23,7 +27,8 @@
 [CmdletBinding()]
 param(
     [switch]$SkipSlow,
-    [string]$Only
+    [string]$Only,
+    [int]$Shard = -1
 )
 
 $ErrorActionPreference = "Stop"
@@ -36,6 +41,97 @@ Import-Module (Join-Path $PSScriptRoot "lib\Git.psm1") -Force
 Import-Module (Join-Path $PSScriptRoot "lib\Manifest.psm1") -Force
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
+
+# why: the cases were 131 s of sequential work on a many-core machine. Each shard runs
+# every top-level line, so helpers and fixtures stay defined, but only the sections
+# whose number modulo $shardCount equals its own; a new section always lands in one.
+$shardCount = 4
+$script:sectionIndex = -1
+$script:inShard = $true
+
+function Start-Section {
+    param([Parameter(Mandatory = $true)][string]$Title)
+
+    $script:sectionIndex++
+    $script:inShard = ($Shard -lt 0) -or (($script:sectionIndex % $shardCount) -eq $Shard)
+
+    if ($script:inShard) {
+        Write-Host ""
+        Write-Host $Title
+        Write-Host ("-" * $Title.Length)
+    }
+}
+
+if ((-not $Only) -and ($Shard -lt 0)) {
+
+    Write-Host ""
+    Write-Host "Harness Self-Test ($shardCount shards)"
+    Write-Host "================="
+
+    $shards = @()
+
+    for ($index = 0; $index -lt $shardCount; $index++) {
+
+        $output = Join-Path ([System.IO.Path]::GetTempPath()) ("harness-shard-" + [guid]::NewGuid().ToString("N").Substring(0, 8) + ".txt")
+        $arguments = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$PSCommandPath`"", "-Shard", $index)
+        if ($SkipSlow) { $arguments += "-SkipSlow" }
+
+        $process = Start-Process -FilePath "powershell" -ArgumentList $arguments -NoNewWindow -PassThru `
+            -RedirectStandardOutput $output -RedirectStandardError ($output + ".err")
+
+        # hazard: Windows PowerShell 5.1 reports no ExitCode for a Start-Process object whose handle was never read.
+        $null = $process.Handle
+
+        $shards += [PSCustomObject]@{ Index = $index; Process = $process; Output = $output }
+    }
+
+    $totals = @{ Passed = 0; Failed = 0; Skipped = 0 }
+    $broken = @()
+
+    foreach ($worker in $shards) {
+
+        $worker.Process.WaitForExit()
+
+        $text = ""
+        foreach ($file in @($worker.Output, ($worker.Output + ".err"))) {
+            if (Test-Path -LiteralPath $file) {
+                $text += [System.IO.File]::ReadAllText($file)
+                Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        Write-Host $text.TrimEnd()
+
+        $summary = [regex]::Match($text, "SHARD RESULT: passed (\d+) failed (\d+) skipped (\d+)")
+
+        if ((-not $summary.Success) -or ($worker.Process.ExitCode -ne 0)) {
+            $broken += "shard $($worker.Index) (exit $($worker.Process.ExitCode))"
+        }
+
+        if ($summary.Success) {
+            $totals.Passed += [int]$summary.Groups[1].Value
+            $totals.Failed += [int]$summary.Groups[2].Value
+            $totals.Skipped += [int]$summary.Groups[3].Value
+        }
+    }
+
+    Write-Host ""
+    Write-Host "================="
+    Write-Host ("Passed: {0}   Failed: {1}   Skipped: {2}" -f $totals.Passed, $totals.Failed, $totals.Skipped)
+    Write-Host "================="
+    Write-Host ""
+
+    if (($broken.Count -gt 0) -or ($totals.Failed -gt 0) -or ($totals.Passed -eq 0)) {
+        if ($broken.Count -gt 0) { Write-Host ("Did not finish cleanly: " + ($broken -join ", ")) }
+        Write-Host "HARNESS SELF-TEST FAILED"
+        Write-Host ""
+        exit 1
+    }
+
+    Write-Host "HARNESS SELF-TEST PASSED"
+    Write-Host ""
+    exit 0
+}
 
 # invariant: the self-test never changes the persisted user PATH; V14 compares against this.
 $userPathAtStart = [Environment]::GetEnvironmentVariable("PATH", "User")
@@ -62,6 +158,7 @@ function Test-Case {
         [scriptblock]$Check
     )
 
+    if (-not $script:inShard) { return }
     if ($Only -and (-not $Name.StartsWith($Only + " "))) { return }
 
     try {
@@ -85,7 +182,7 @@ function Test-Case {
 function Skip-Case {
     param([string]$Name, [string]$Reason)
 
-    if ($Only) { return }
+    if ($Only -or (-not $script:inShard)) { return }
 
     $script:skipped++
     Write-Status -Label "SKIP" -Detail "$Name ($Reason)"
@@ -131,14 +228,14 @@ function Get-RepoFile {
     return @($items)
 }
 
-Write-Host ""
-Write-Host "Harness Self-Test"
-Write-Host "================="
-Write-Host ""
-Write-Host "Repository: $repoRoot"
-Write-Host ""
-Write-Host "Scripts"
-Write-Host "-------"
+if ($Shard -lt 0) {
+    Write-Host ""
+    Write-Host "Harness Self-Test"
+    Write-Host "================="
+    Write-Host ""
+    Write-Host "Repository: $repoRoot"
+}
+Start-Section "Scripts"
 
 $scriptFiles = Get-RepoFile -Extension ".ps1", ".psm1"
 
@@ -156,9 +253,7 @@ foreach ($file in $scriptFiles) {
     }
 }
 
-Write-Host ""
-Write-Host "PowerShell 5.1 compatibility"
-Write-Host "----------------------------"
+Start-Section "PowerShell 5.1 compatibility"
 
 # Operator forms only, so that string literals such as the git porcelain
 # untracked marker "??" are not mistaken for the PowerShell 7 operator.
@@ -213,9 +308,7 @@ foreach ($entry in $forbidden) {
     }
 }
 
-Write-Host ""
-Write-Host "Repository hygiene"
-Write-Host "------------------"
+Start-Section "Repository hygiene"
 
 Test-Case -Name "no hardcoded user paths" -Check {
 
@@ -297,9 +390,7 @@ Test-Case -Name "gitignore blocks credentials and machine state" -Check {
     return ("not ignored: " + ($notIgnored -join ", "))
 }
 
-Write-Host ""
-Write-Host "Permissions"
-Write-Host "-----------"
+Start-Section "Permissions"
 
 Test-Case -Name "no blanket shell allow rule" -Check {
 
@@ -428,9 +519,7 @@ Test-Case -Name "user settings deny push and secret reads" -Check {
     return ("missing deny rules: " + ($missing -join ", "))
 }
 
-Write-Host ""
-Write-Host "Templates"
-Write-Host "---------"
+Start-Section "Templates"
 
 $sharedRoot = Join-Path $repoRoot (Join-Path "templates" "_shared")
 
@@ -500,9 +589,7 @@ foreach ($template in (Get-ChildItem -LiteralPath (Join-Path $repoRoot "template
     }
 }
 
-Write-Host ""
-Write-Host "Agents and skills"
-Write-Host "-----------------"
+Start-Section "Agents and skills"
 
 foreach ($agentFile in (Get-ChildItem -LiteralPath (Join-Path $repoRoot "user\agents") -File -Filter *.md -ErrorAction SilentlyContinue)) {
 
@@ -547,9 +634,7 @@ Test-Case -Name "templates let skills read their own folder" -Check {
     return $true
 }
 
-Write-Host ""
-Write-Host "Installer"
-Write-Host "---------"
+Start-Section "Installer"
 
 $scratch = Join-Path ([System.IO.Path]::GetTempPath()) ("harness-selftest-" + [guid]::NewGuid().ToString("N").Substring(0, 8))
 $previousConfigDir = $env:CLAUDE_CONFIG_DIR
@@ -767,9 +852,7 @@ Test-Case -Name "health-check blames the missing runtime, not the network" -Chec
     return $true
 }
 
-Write-Host ""
-Write-Host "Git helpers"
-Write-Host "-----------"
+Start-Section "Git helpers"
 
 $statusRepo = Join-Path ([System.IO.Path]::GetTempPath()) ("harness-status-" + [guid]::NewGuid().ToString("N").Substring(0, 8))
 
@@ -813,9 +896,7 @@ finally {
     }
 }
 
-Write-Host ""
-Write-Host "Secret-commit hook"
-Write-Host "------------------"
+Start-Section "Secret-commit hook"
 
 # Run against an installed project: the hook imports VerifyCommon.psm1 from
 # .claude/scripts, which only sits beside it after installation.
@@ -886,9 +967,7 @@ finally {
     }
 }
 
-Write-Host ""
-Write-Host "Template deduplication"
-Write-Host "----------------------"
+Start-Section "Template deduplication"
 
 Test-Case -Name "no file is duplicated between templates" -Check {
 
@@ -920,9 +999,7 @@ Test-Case -Name "no file is duplicated between templates" -Check {
     return ("identical in more than one template, belongs in _shared: " + ($duplicates -join ", "))
 }
 
-Write-Host ""
-Write-Host "Dogfooding"
-Write-Host "----------"
+Start-Section "Dogfooding"
 
 # The harness installs itself, so the same gate that protects other projects
 # protects this one. If _shared changes and the harness is not reinstalled, its
@@ -992,9 +1069,7 @@ Test-Case -Name "the harness has its own project instructions" -Check {
     return "AGENTS.md does not name the verification command"
 }
 
-Write-Host ""
-Write-Host "Detection"
-Write-Host "---------"
+Start-Section "Detection"
 
 # init-project.ps1 used to demand -Type and -Path on every run. They are detected
 # now, and a detector is only worth having if it is right: each case below
@@ -1394,9 +1469,7 @@ Test-Case -Name "-Path defaults to the current directory, not the process one" -
         Remove-Item -LiteralPath $project -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
-Write-Host ""
-Write-Host "Extension points"
-Write-Host "----------------"
+Start-Section "Extension points"
 
 # why: R7 reads this machine's persisted PATH, so it only has something to say about the
 # checkout setup installed; any other checkout (a fork, a clone, a worktree) is not on it.
@@ -2119,9 +2192,7 @@ Test-Case -Name "warming runs the runtime that is actually registered" -Check {
 
 
 Write-Host ""
-Write-Host ""
-Write-Host "Verification gate"
-Write-Host "-----------------"
+Start-Section "Verification gate"
 
 # The gate is the mechanism behind "verification defines done". It once failed
 # silently because a mandatory [string[]] parameter rejects empty strings, the
@@ -2391,9 +2462,7 @@ finally {
     }
 }
 
-Write-Host ""
-Write-Host "Verifier toolchain"
-Write-Host "------------------"
+Start-Section "Verifier toolchain"
 
 # The .NET verifier has to choose between the dotnet CLI and Visual Studio's
 # MSBuild. Choosing wrong is not cosmetic: the dotnet CLI cannot restore, build
@@ -2484,9 +2553,7 @@ Test-Case -Name "the verifier still uses the dotnet CLI on an SDK-style project"
         -Expect "The .NET SDK was not found in PATH")
 }
 
-Write-Host ""
-Write-Host "Verification speed"
-Write-Host "------------------"
+Start-Section "Verification speed"
 
 Import-Module (Join-Path $sharedRoot (Join-Path "dot-claude" (Join-Path "scripts" "VerifyCommon.psm1"))) -Force
 
@@ -2757,9 +2824,7 @@ finally {
     foreach ($root in $script:speedRoots) { Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue }
 }
 
-Write-Host ""
-Write-Host "Setup, doctor and MCP"
-Write-Host "---------------------"
+Start-Section "Setup, doctor and MCP"
 
 # External programs are replaced by recording stubs placed first on PATH, and
 # the configuration directory is a scratch CLAUDE_CONFIG_DIR. What these prove
@@ -3046,6 +3111,8 @@ try {
         return $true
     }
 
+    Start-Section "Init"
+
     # S2 - init
 
     function New-InitProject {
@@ -3123,6 +3190,8 @@ try {
         }
         return $true
     }
+
+    Start-Section "MCP"
 
     # S3 - mcp add
 
@@ -3230,6 +3299,8 @@ try {
         if ($settings.PSObject.Properties["enabledMcpjsonServers"] -and (@($settings.enabledMcpjsonServers) -contains "azure-devops")) { return "azure-devops was enabled in settings.json" }
         return $true
     }
+
+    Start-Section "Azure DevOps"
 
     # K - azure-devops per project: configure-ado.ps1 run in-process against a stub HTTP server and a stub claude.
 
@@ -3528,6 +3599,8 @@ try {
         return $true
     }
 
+    Start-Section "README"
+
     # S4 - README
 
     $readme = Get-Content -LiteralPath (Join-Path $repoRoot "README.md") -Raw -Encoding UTF8
@@ -3778,6 +3851,8 @@ try {
         return $true
     }
 
+    Start-Section "Commands and paths"
+
     # S5 - smaller surface
 
     $dispatcher = Join-Path $repoRoot "tazuna.ps1"
@@ -3983,6 +4058,8 @@ try {
         }
         return $true
     }
+
+    Start-Section "Mascot"
 
     # The mascot, Frenatus. The geometry constants are the ones the consistency
     # checklist in docs/mascot.md fixes: rein lines, seal glass, halo window,
@@ -4889,9 +4966,7 @@ try {
         return $true
     }
 
-    Write-Host ""
-    Write-Host "Architecture"
-    Write-Host "------------"
+    Start-Section "Architecture"
 
     $libDirectory = Join-Path $PSScriptRoot "lib"
 
@@ -5082,6 +5157,8 @@ try {
         }
         return $true
     }
+
+    Start-Section "Command line"
 
     # Install experience.
 
@@ -5547,6 +5624,8 @@ try {
         return $true
     }
 
+    Start-Section "Release"
+
     # The release version, read from the manifest.
 
     $releaseVersion = (Get-HarnessManifest).Version
@@ -5666,9 +5745,7 @@ try {
         return $true
     }
 
-    Write-Host ""
-    Write-Host "Cursor"
-    Write-Host "------"
+    Start-Section "Cursor"
 
     # Payloads follow cursor.com/docs/agent/hooks. No case here runs inside Cursor itself.
     function New-CursorProject {
@@ -5844,6 +5921,8 @@ try {
         if (($active.Code -ne 0) -or $active.Out -or $active.Err) { return "stop_hook_active: exit $($active.Code)" }
         return $true
     }
+
+    Start-Section "Cursor install"
 
     function Split-Frontmatter {
         param([string]$Text)
@@ -6089,9 +6168,7 @@ finally {
     }
 }
 
-Write-Host ""
-Write-Host "Claude Code integration"
-Write-Host "-----------------------"
+Start-Section "Claude Code integration"
 
 if ($SkipSlow) {
     Skip-Case -Name "agents and skills are recognised" -Reason "-SkipSlow"
@@ -6144,6 +6221,13 @@ Test-Case -Name "V14 the self-test leaves the persisted user PATH as it found it
 
 $env:TAZUNA_SKIP_PATH = $skipPathAtStart
 $env:TAZUNA_CURSOR_DIR = $cursorDirAtStart
+
+if ($Shard -ge 0) {
+    Write-Host ""
+    Write-Host ("SHARD RESULT: passed {0} failed {1} skipped {2}" -f $script:passed, $script:failed, $script:skipped)
+    if ($script:failed -gt 0) { exit 1 }
+    exit 0
+}
 
 Write-Host ""
 Write-Host "================="
