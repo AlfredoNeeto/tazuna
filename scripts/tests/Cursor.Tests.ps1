@@ -346,11 +346,28 @@ try {
         return $true
     }
 
-    Test-Case -Name "SK2 setup installs fix-bug and ship for Cursor too" -Check {
+    Test-Case -Name "SK2 setup installs fix-bug and ship for Cursor too, and doctor names either one missing there" -Check {
+        $kit = @("fix-bug", "ship")
         $run = Get-CursorSetupRun -Key "both" -Cursor
         if ($run.Code -ne 0) { return "exit $($run.Code): $($run.Output)" }
-        $missing = @(@("fix-bug", "ship") | Where-Object { -not (Test-Path -LiteralPath (Join-Path $run.Cursor "skills\$_\SKILL.md")) })
+        $missing = @($kit | Where-Object { -not (Test-Path -LiteralPath (Join-Path $run.Cursor "skills\$_\SKILL.md")) })
         if ($missing.Count -gt 0) { return ("not installed for Cursor: " + ($missing -join ", ")) }
+
+        $cursorOnly = Get-CursorSetupRun -Key "cursor-only" -NoClaude -Cursor -McpJson $cursorMcp
+        $moved = Join-Path $cursorOnly.Root "moved-cursor-kit"
+        New-Item -ItemType Directory -Path $moved -Force | Out-Null
+        foreach ($skill in $kit) { Move-Item -LiteralPath (Join-Path $cursorOnly.Cursor "skills\$skill") -Destination $moved }
+
+        try {
+            $doctor = Invoke-CursorScript -Root $cursorOnly.Root -Script "health-check.ps1" -NoClaude
+        }
+        finally {
+            foreach ($skill in $kit) { Move-Item -LiteralPath (Join-Path $moved $skill) -Destination (Join-Path $cursorOnly.Cursor "skills") }
+        }
+
+        if ($doctor.Code -ne 1) { return "doctor exited $($doctor.Code) without fix-bug and ship in Cursor, expected 1" }
+        $unnamed = @($kit | Where-Object { $doctor.Output -notmatch ("skill " + [regex]::Escape($_) + " is missing from") })
+        if ($unnamed.Count -gt 0) { return ("doctor did not name: " + ($unnamed -join ", ")) }
         return $true
     }
     Test-Case -Name "U16 setup with Claude Code and Cursor installs the six skills for both in one call, -a claude-code cursor -g" -Check {

@@ -470,7 +470,7 @@ try {
 
     Test-Case -Name "UP1 a second init replaces Tazuna's hooks and module with a backup, and keeps the project's verify.ps1" -Check {
         $run = New-InitProject -Files @{ "App.csproj" = '<Project Sdk="Microsoft.NET.Sdk" />' }
-        $owned = @(".claude\hooks\require-verification.ps1", ".claude\scripts\VerifyCommon.psm1")
+        $owned = @(".claude\hooks\require-verification.ps1", ".claude\hooks\record-session-baseline.ps1", ".claude\hooks\block-secret-commit.ps1", ".claude\scripts\VerifyCommon.psm1")
         $projectOwned = ".claude\scripts\verify.ps1"
 
         foreach ($relative in ($owned + $projectOwned)) { Add-Content -LiteralPath (Join-Path $run.Project $relative) -Value "# an older copy" }

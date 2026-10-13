@@ -524,4 +524,17 @@ Test-Case -Name "IF1 every Claude settings file Tazuna ships runs the git hook o
     }
     return $true
 }
+Test-Case -Name "SK3 the kit skills keep their contract: fix-bug proves with a failing test, ship never publishes" -Check {
+    $fixBug = [System.IO.File]::ReadAllText((Join-Path $repoRoot "user\skills\fix-bug\SKILL.md"))
+    $ship = [System.IO.File]::ReadAllText((Join-Path $repoRoot "user\skills\ship\SKILL.md"))
+
+    # invariant: these are the sentences that make each skill what the README promises.
+    foreach ($phrase in @("smallest test that fails", "every caller", "before\s+and after", "verify\.ps1", "Never weaken, skip or delete a\s+test")) {
+        if ($fixBug -notmatch $phrase) { return "fix-bug no longer says: $phrase" }
+    }
+    foreach ($phrase in @("verify\.ps1", "Conventional Commit", "Never run ``git push``", "never merge", "Stop before publishing")) {
+        if ($ship -notmatch $phrase) { return "ship no longer says: $phrase" }
+    }
+    return $true
+}
 Complete-TestFile
