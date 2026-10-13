@@ -6,7 +6,9 @@
 
 - The verification gate lists the project's files with `git ls-files`, so it no longer walks
   `node_modules`, `bin` or `obj`. On a 34,520-file checkout the fingerprint behind the Stop hook
-  went from 11.6 s to 0.2 s. Outside git it walks the tree without entering those directories.
+  went from 11.6 s to 0.2 s. A tracked file counts wherever it lives, a `build/` directory
+  included; only the harness's own state is left out. Outside git it walks the tree without
+  entering those directories.
 - `verify.ps1` reports the last pass instead of repeating it while the sources, the tests and the
   arguments are the same; `-Force` runs it again. The header, `git diff --check`, the recorded state
   and the banner moved into `Invoke-Verification` in `VerifyCommon.psm1`, so each `verify.ps1`
