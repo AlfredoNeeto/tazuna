@@ -236,9 +236,9 @@ try {
     $baselineHook = Join-Path $hookDirectory "record-session-baseline.ps1"
 
     function Invoke-GateHook {
-        param([string]$HookPath, [switch]$StopHookActive)
+        param([string]$HookPath, [switch]$StopHookActive, [string]$Cwd = $gateProject)
 
-        $payload = @{ cwd = $gateProject }
+        $payload = @{ cwd = $Cwd }
 
         if ($StopHookActive) {
             $payload["stop_hook_active"] = $true
@@ -247,13 +247,21 @@ try {
         $json = $payload | ConvertTo-Json -Compress
 
         $previous = $ErrorActionPreference
+        $previousProject = $env:CLAUDE_PROJECT_DIR
         $ErrorActionPreference = "Continue"
+        # invariant: Claude Code sets CLAUDE_PROJECT_DIR for every hook; the one this process inherited is someone else's session.
+        $env:CLAUDE_PROJECT_DIR = $gateProject
         $global:LASTEXITCODE = 0
 
-        $json | & powershell -NoProfile -ExecutionPolicy Bypass -File $HookPath 2>$null | Out-Null
-        $code = $LASTEXITCODE
+        try {
+            $json | & powershell -NoProfile -ExecutionPolicy Bypass -File $HookPath 2>$null | Out-Null
+            $code = $LASTEXITCODE
+        }
+        finally {
+            $ErrorActionPreference = $previous
+            $env:CLAUDE_PROJECT_DIR = $previousProject
+        }
 
-        $ErrorActionPreference = $previous
         return $code
     }
 
@@ -285,6 +293,53 @@ try {
         return "exit $code, expected 2 - the gate is not firing"
     }
 
+    function Invoke-ProjectHook {
+        # why: each PD case owns its project, so it holds under -Only and in any order.
+        param([string]$Project, [string]$Hook, [string]$Cwd)
+
+        $previousProject = $env:CLAUDE_PROJECT_DIR
+        $previous = $ErrorActionPreference
+
+        try {
+            $env:CLAUDE_PROJECT_DIR = $Project
+            $ErrorActionPreference = "Continue"
+            $global:LASTEXITCODE = 0
+            (@{ cwd = $Cwd } | ConvertTo-Json -Compress) |
+                & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Project ".claude\hooks\$Hook") 2>$null | Out-Null
+            return $LASTEXITCODE
+        }
+        finally {
+            $env:CLAUDE_PROJECT_DIR = $previousProject
+            $ErrorActionPreference = $previous
+        }
+    }
+
+    function New-GateProject {
+        $project = Join-Path (New-ScratchRoot) "project"
+        New-Item -ItemType Directory -Path (Join-Path $project "src") -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $project "App.csproj") -Value "<Project />" -NoNewline
+        & (Join-Path $scriptsRoot "init-project.ps1") -Type dotnet -Path $project -NoTrust 6>$null | Out-Null
+        return $project
+    }
+
+    Test-Case -Name "PD1 the gate judges CLAUDE_PROJECT_DIR when the session has moved into a subdirectory" -Check {
+        $project = New-GateProject
+        $null = Invoke-ProjectHook -Project $project -Hook "record-session-baseline.ps1" -Cwd $project
+        Set-Content -LiteralPath (Join-Path $project "src\Program.cs") -Value "class P { }" -NoNewline
+
+        $code = Invoke-ProjectHook -Project $project -Hook "require-verification.ps1" -Cwd (Join-Path $project "src")
+        if ($code -eq 2) { return $true }
+        return "exit $code, expected 2 - from src\ the gate let the unverified change through"
+    }
+
+    Test-Case -Name "PD2 the session baseline is recorded in CLAUDE_PROJECT_DIR, not in the current subdirectory" -Check {
+        $project = New-GateProject
+        $null = Invoke-ProjectHook -Project $project -Hook "record-session-baseline.ps1" -Cwd (Join-Path $project "src")
+
+        if (-not (Test-Path -LiteralPath (Join-Path $project ".claude\state\session-baseline.json"))) { return "no baseline in the project's .claude\state" }
+        if (Test-Path -LiteralPath (Join-Path $project "src\.claude")) { return "a baseline was written under src\" }
+        return $true
+    }
     Test-Case -Name "gate blocks only once per turn" -Check {
         $code = Invoke-GateHook -HookPath $stopHook -StopHookActive
         if ($code -eq 0) { return $true }
