@@ -75,18 +75,35 @@ $secretContentPatterns = @(
 # a\ b, a` b, $(...) or "x y" cannot hide what follows, so the words below are looked for in the rest
 # of the command. A rare false positive, such as git -C . stash push, is the price of that.
 $gitProgram = '(?<![\w.-])["'']?(?:[^\s;&|"'']*[\\/])?git(?:\.exe)?["'']?(?=\s)'
-$firstWord = '^\s+["'']?(?<word>[^\s"'']+)'
+# invariant: a word ends at a shell separator too, so `git push;`, `(git push)` and `$(git push)` read push.
+$firstWord = '^\s+["'']?(?<word>[^\s"'';&|()`]+)'
 
 function Test-GitWord {
-    # True when Word stands alone in Text, quoted or bare; --grep=push or push-all do not count.
+    # invariant: Word counts only as a whole word, bare or wholly quoted; --grep=push, HEAD:push.ps1,
+    # push-all and a message such as "push fix" do not.
     param([string]$Text, [string]$Word)
-    return ($Text -match ('(?<![\w=/.\\-])["'']?' + [regex]::Escape($Word) + '["'']?(?![\w-])'))
+    $escaped = [regex]::Escape($Word)
+    return ($Text -match ('(?<![\w=/.\\:"''-])(?:' + $escaped + '|"' + $escaped + '"|''' + $escaped + ''')(?![\w"''.:/\\-])'))
+}
+
+function Get-GitScope {
+    # The words after a global option that belong to this git call: up to the next ; & | or line
+    # break when quotes and parentheses are balanced there, otherwise the rest of the command,
+    # because a separator inside a quoted or substituted value does not end the call.
+    param([string]$After)
+
+    $segment = ($After -split '[;&|\r\n]')[0]
+    $balanced = (($segment.Split('"').Count % 2) -eq 1) -and (($segment.Split("'").Count % 2) -eq 1) -and
+        ($segment.Split('(').Count -eq $segment.Split(')').Count)
+
+    if ($balanced) { return $segment }
+    return $After
 }
 
 # invariant: the subcommands user/settings.json denies besides push, looked for anywhere after a global option.
 $destructivePatterns = @(
     '(?<![\w-])reset\b.*\s--hard\b',
-    '(?<![\w=/.\\-])clean(?![\w-])',
+    '(?<![\w=/.\\:"''-])clean(?![\w"''.:/\\-])',
     '(?<![\w-])branch\b.*\s(-d|-D|--delete)\b',
     '(?<![\w-])filter-branch\b',
     '(?<![\w-])filter-repo\b',
@@ -239,6 +256,9 @@ try {
         Exit-Allow
     }
 
+    # why: a line continuation, bash's backslash or PowerShell's backtick, does not end the git call.
+    $command = ($command -replace '\\\r?\n', ' ') -replace '`\r?\n', ' '
+
     $calls = @([regex]::Matches($command, $gitProgram, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase))
 
     if ($calls.Count -eq 0) {
@@ -275,6 +295,8 @@ try {
             if ($word -eq "commit") { $commits += [PSCustomObject]@{ Global = $false; Words = $words } }
             continue
         }
+
+        $after = Get-GitScope -After $after
 
         if (Test-GitWord -Text $after -Word "push") {
             Exit-Block -Title "Refusing to push: publishing is the owner's decision." `

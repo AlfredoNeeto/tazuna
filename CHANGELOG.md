@@ -46,8 +46,8 @@
 - The self-test no longer waits 120 s for its Azure DevOps stub server to stop.
 - `git -C . push` went through the rule that denies `git push`, and `git -C . commit` skipped the
   one that asks. The project hook now refuses `git push` however git is called (`GIT`, `git.exe`,
-  a full path), and behind any git global option it refuses a command that names push or a denied
-  destructive command, and asks for a commit. It reads the command text, so it guards against
+  a full path), and behind any git global option it refuses a push or a denied destructive command
+  in that call, and asks for a commit. It reads the command text, so it guards against
   mistakes, not against deliberate obfuscation such as aliases or variables.
 - The secret check ran before `git add . && git commit` had staged anything, so it saw nothing.
   It now reads the working tree too when the same command stages it.

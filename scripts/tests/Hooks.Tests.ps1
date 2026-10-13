@@ -147,7 +147,9 @@ try {
             'git -c user.name="A B" push', 'git -c "core.a=b c" push', "git --config-env=core.x=Y push", 'git -C "C:\My Repo" push', ('git status {0} git push' -f '&&'),
             'git -C a\ b push', 'git -C a` b push', 'git -c user.name=A\ B push', 'git -c "a.b=\"x y\"" push', 'git -c "a.b=`"x y`"" push',
             'git -C $(echo .) push', 'git -C (Join-Path . .) push', "git --config-env x push", "git --attr-source HEAD push",
-            "GIT push", "git.EXE push", '"git" push', 'git "push"', '"C:\Program Files\Git\cmd\git.exe" push')
+            "GIT push", "git.EXE push", '"git" push', 'git "push"', '"C:\Program Files\Git\cmd\git.exe" push',
+            'git push; git status', ('(cd sub {0} git push)' -f '&&'), ('git push{0}echo ok' -f '&&'), '$(git push)', '`git push`', 'git -c "a;b" push',
+            ("git \" + "`n" + "push"), ("git \" + "`n" + "-C . push"), ("git ``" + "`n" + "push"))
         foreach ($command in $spellings) {
             $call = Invoke-HookCall -Command $command
             if (($call.Code -ne 2) -or ($call.Err -notmatch "Refusing to push")) { return "'$command': exit $($call.Code), stderr '$($call.Err.Trim())'" }
@@ -164,7 +166,9 @@ try {
     }
 
     Test-Case -Name "G3 status, log --grep=push, stash push and a -C status pass untouched" -Check {
-        foreach ($command in @("git status", "git -C . status", "git log --grep=push", "git -C . log --grep=push", "git stash push", "git -C . diff", 'git -c user.name="A B" status', 'git commit -m "fix push"')) {
+        $passing = @("git status", "git -C . status", "git log --grep=push", "git -C . log --grep=push", "git stash push", "git -C . diff", 'git -c user.name="A B" status', 'git commit -m "fix push"',
+            'git -C . log --grep="push"', 'git -C . log | grep push', ('git -C . status {0} dotnet clean' -f '&&'), 'git -C . show HEAD:push.ps1')
+        foreach ($command in $passing) {
             $call = Invoke-HookCall -Command $command
             if (($call.Code -ne 0) -or $call.Out -or $call.Err.Trim()) { return "'$command': exit $($call.Code), stdout '$($call.Out)', stderr '$($call.Err.Trim())'" }
         }
@@ -179,8 +183,10 @@ try {
 
         try {
             Set-Content -LiteralPath (Join-Path $hookRepo ".env") -Value "TOKEN=abc" -NoNewline
-            $call = Invoke-HookCall -Command ('git add . {0} git commit -m wip' -f '&&')
-            if (($call.Code -ne 2) -or ($call.Err -notmatch "\.env")) { return "git add then commit with an untracked .env: exit $($call.Code), stderr '$($call.Err.Trim())'" }
+            foreach ($command in @(('git add . {0} git commit -m wip' -f '&&'), ('git -C . add . {0} git -C . commit -m wip' -f '&&'))) {
+                $call = Invoke-HookCall -Command $command
+                if (($call.Code -ne 2) -or ($call.Err -notmatch "\.env")) { return "$command with an untracked .env: exit $($call.Code), stderr '$($call.Err.Trim())'" }
+            }
             Remove-Item -LiteralPath (Join-Path $hookRepo ".env") -Force
 
             # why: a key pasted into a new file with an ordinary name is found by its content, not its name.
@@ -190,7 +196,7 @@ try {
             Remove-Item -LiteralPath (Join-Path $hookRepo "notes.txt") -Force
 
             Set-Content -LiteralPath (Join-Path $hookRepo "Tracked.cs") -Value ("var key = `"AKIA" + "ABCDEFGHIJKLMNOP`";") -NoNewline
-            foreach ($command in @("git commit -am wip", "git commit -a -m wip", "git commit --all -m wip")) {
+            foreach ($command in @("git commit -am wip", "git commit -a -m wip", "git commit --all -m wip", "git -C . commit -am wip")) {
                 $call = Invoke-HookCall -Command $command
                 if (($call.Code -ne 2) -or ($call.Err -notmatch "AWS access key")) { return "$command with a key in a tracked file: exit $($call.Code), stderr '$($call.Err.Trim())'" }
             }
@@ -208,7 +214,7 @@ try {
     }
 
     Test-Case -Name "G5 a commit written with a global option asks instead of passing" -Check {
-        foreach ($command in @("git -C . commit -m wip", 'git -C a\ b commit -m wip')) {
+        foreach ($command in @("git -C . commit -m wip", 'git -C a\ b commit -m wip', 'git -C . commit -m "clean up"', 'git -C . commit -m "push fix"')) {
             $call = Invoke-HookCall -Command $command
             if ($call.Code -ne 0) { return "'$command': exit $($call.Code), stderr '$($call.Err.Trim())'" }
             $answer = $call.Out | ConvertFrom-Json
