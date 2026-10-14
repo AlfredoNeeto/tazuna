@@ -9,7 +9,7 @@
 <rect x="1" y="1" width="958" height="298" rx="18" fill="#1c1419" stroke="#6a4716" stroke-width="2"/>
 <clipPath id="card"><rect x="1" y="1" width="958" height="298" rx="18"/></clipPath>
 <text x="64" y="118" font-family="Georgia, 'Times New Roman', serif" font-size="64" fill="#f9e7a8">Tazuna</text>
-<text x="66" y="160" font-family="ui-sans-serif, 'Segoe UI', system-ui, sans-serif" font-size="18" fill="#e2d6bb">A verification gate for Claude Code and Cursor that works in any stack.</text>
+<text x="66" y="160" font-family="ui-sans-serif, 'Segoe UI', system-ui, sans-serif" font-size="18" fill="#e2d6bb">Claude Code and Cursor on Windows, on the Tech Leads Club harness.</text>
 <g id="lead" transform="translate(64 230) scale(3.5)" shape-rendering="crispEdges"><path fill="#6c4326" d="M0 0h18v1h-18zM21 0h36v1h-36zM60 0h36v1h-36zM99 0h36v1h-36zM138 0h36v1h-36zM177 0h28v1h-28z"/><path fill="#d9a948" d="M18 0h3v1h-3zM57 0h3v1h-3zM96 0h3v1h-3zM135 0h3v1h-3zM174 0h3v1h-3z"/><path fill="#3a2215" d="M0 1h18v1h-18zM21 1h36v1h-36zM60 1h36v1h-36zM99 1h36v1h-36zM138 1h36v1h-36zM177 1h28v1h-28z"/><path fill="#a5752a" d="M18 1h3v1h-3zM57 1h3v1h-3zM96 1h3v1h-3zM135 1h3v1h-3zM174 1h3v1h-3z"/><path fill="#0c0809" d="M0 2h205v1h-205z"/></g>
 <text x="132" y="218" text-anchor="middle" font-family="ui-monospace, 'Cascadia Code', Consolas, monospace" font-size="20" fill="#e25a5c">Plan</text>
 <text x="269" y="218" text-anchor="middle" font-family="ui-monospace, 'Cascadia Code', Consolas, monospace" font-size="20" fill="#e25a5c">Checks</text>

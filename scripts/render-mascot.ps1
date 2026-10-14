@@ -200,7 +200,7 @@ function Get-LeadSprite {
 function Get-BannerSvg {
     param($Hero, $Lit)
 
-    $tagline = "A verification gate for Claude Code and Cursor that works in any stack."
+    $tagline = "Claude Code and Cursor on Windows, on the Tech Leads Club harness."
 
     $heroLeft = 960 - 64 * 3.5
     $heroTop = 300 - 64 * 3.5
@@ -280,7 +280,7 @@ function Get-SocialPreviewBytes {
     Add-Type -AssemblyName System.Drawing
 
     $arrow = [string][char]0x2192
-    $tagline = "A verification gate for Claude Code and Cursor that works in any stack."
+    $tagline = "Claude Code and Cursor on Windows, on the Tech Leads Club harness."
     $bitmap = New-Object System.Drawing.Bitmap 1280, 640
     $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
 
