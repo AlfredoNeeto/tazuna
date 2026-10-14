@@ -171,6 +171,9 @@ foreach ($skillsHome in $homes) {
 '@
         "tlc"    = ($record -f "tlc") + @'
 
+if (($args[0] -eq "harness") -and ($args[1] -eq "status") -and $env:HARNESS_STUB_GRIND) {
+    Write-Output ('{"root":"stub","grind":' + $env:HARNESS_STUB_GRIND + '}')
+}
 if (($args[0] -eq "harness") -and ($args[1] -eq "install") -and ($env:HARNESS_STUB_FAIL -ne "tlc-hook") -and $env:TAZUNA_CURSOR_DIR -and (Test-Path -LiteralPath $env:TAZUNA_CURSOR_DIR)) {
     Set-Content -LiteralPath (Join-Path $env:TAZUNA_CURSOR_DIR "hooks.json") -Value '{"version":1,"hooks":{"stop":[{"command":"cmd /c node C:/stub/.tlc/harness/bin/tlc-exec.mjs obs-stop"}]}}'
 }

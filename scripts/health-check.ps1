@@ -8,7 +8,7 @@
     in a bootstrap script.
 
     Checks performed:
-      - claude or Cursor, git, node 24+ and the .NET SDK resolve on PATH
+      - claude or Cursor, git and node 24+ resolve on PATH
       - with Cursor: the toolkit hooks, the skills and the global rule in ~/.cursor
       - the harness-toolkit hooks are wired and every harness skill is installed
       - Claude Code is at least the version required for AGENTS.md support
@@ -17,6 +17,8 @@
       - every installed JSON file parses
       - no drift between the repository's user/ tree and what is installed
       - no credential or session-state file has leaked into the repository
+      - in a project: no 1.x gate left behind, a gate test command the toolkit
+        can start, and whether grind is on
 
 .PARAMETER NoTitle
     Leave the title out. tazuna setup passes it, because it prints its own.
@@ -37,6 +39,7 @@ Import-Module (Join-Path $PSScriptRoot "lib\Json.psm1") -Force
 Import-Module (Join-Path $PSScriptRoot "lib\Console.psm1") -Force
 Import-Module (Join-Path $PSScriptRoot "lib\Manifest.psm1") -Force
 Import-Module (Join-Path $PSScriptRoot "lib\Toolchain.psm1") -Force
+Import-Module (Join-Path $PSScriptRoot "lib\Git.psm1") -Force
 
 $minimumClaudeVersion = [version](Get-HarnessManifest).MinimumClaudeVersion
 
@@ -602,6 +605,80 @@ foreach ($name in $forbidden) {
 
 if ($leaked -eq 0) {
     Add-Pass "No credential or session-state files in the repository"
+}
+
+# why: a machine can be healthy while the project it is used in has no gate, a gate that cannot
+# start, or the 1.x gate still running; each of those lets a turn end on untested code.
+$projectRoot = Get-GitRoot -Path $PWD.ProviderPath
+
+if ($projectRoot) {
+
+    Write-Host ""
+    Write-Host "Project: $projectRoot"
+    Write-Host "-------"
+
+    $legacy = @(@(".claude\hooks\require-verification.ps1", ".claude\hooks\record-session-baseline.ps1",
+            ".claude\hooks\block-secret-commit.ps1", ".claude\scripts\VerifyCommon.psm1") |
+        Where-Object { Test-Path -LiteralPath (Join-Path $projectRoot $_) })
+
+    if ($legacy.Count -gt 0) {
+        Add-Warning ("the Tazuna 1.x gate is still here (" + ($legacy -join ", ") + "); run: tazuna init")
+    }
+
+    $testCommand = @()
+
+    foreach ($policyFile in @((Join-Path $projectRoot ".tlc\harness\config.json"), (Join-Path $HOME ".tlc\harness\config.json"))) {
+        if (-not (Test-Path -LiteralPath $policyFile)) { continue }
+        try { $policy = Get-Content -LiteralPath $policyFile -Raw | ConvertFrom-Json } catch { continue }
+        if ($policy.PSObject.Properties["grind"] -and $policy.grind.PSObject.Properties["testCommand"]) {
+            $testCommand = @($policy.grind.testCommand)
+            break
+        }
+    }
+
+    if ($testCommand.Count -eq 0) {
+        Write-Status -Label "--" -Detail "no gate test command; set one: tlc harness gate test-command <command> [args]"
+    }
+    else {
+        $resolved = Get-Command $testCommand[0] -ErrorAction SilentlyContinue | Select-Object -First 1
+
+        if (-not $resolved) {
+            Add-Warning "the gate test command starts with '$($testCommand[0])', which is not on PATH"
+        }
+        elseif (@(".cmd", ".bat", ".ps1") -contains [System.IO.Path]::GetExtension([string]$resolved.Source)) {
+            # why: the toolkit spawns the command without a shell, and Windows starts only an .exe that way.
+            Add-Warning ("the gate test command starts with '$($testCommand[0])' ($($resolved.Source)), which the gate cannot start; " +
+                "wrap it: cmd /c " + ($testCommand -join " "))
+        }
+        else {
+            Add-Pass ("gate test command: " + ($testCommand -join " "))
+        }
+    }
+
+    if (Get-Command tlc -ErrorAction SilentlyContinue) {
+
+        $status = $null
+        $previous = $ErrorActionPreference
+        Push-Location -LiteralPath $projectRoot
+
+        try {
+            # hazard: tlc writes to stderr on some paths; under 'Stop' a native line on stderr would throw here.
+            $ErrorActionPreference = "Continue"
+            $status = (& tlc harness status --json 2>$null | Out-String) | ConvertFrom-Json
+        }
+        catch {
+            $status = $null
+        }
+        finally {
+            Pop-Location
+            $ErrorActionPreference = $previous
+        }
+
+        if ($status -and $status.PSObject.Properties["grind"]) {
+            if ($status.grind) { Add-Pass "grind is on: the gate runs when a turn ends" }
+            else { Write-Status -Label "--" -Detail "grind is off: no test runs when a turn ends; turn it on: tlc harness grind on" }
+        }
+    }
 }
 
 Write-Host ""

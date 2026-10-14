@@ -257,6 +257,71 @@ else {
     }
 }
 
+Start-Section "Doctor in a project"
+
+function Invoke-ProjectDoctor {
+    # doctor run from inside Project, with Environment for the stubs; returns its output.
+    param([string]$Project, [hashtable]$Environment = @{})
+    $run = Get-SetupRun -Key "fresh"
+    # why: PowerShell starts a native command in its own location, not the process directory.
+    Push-Location -LiteralPath $Project
+    try {
+        return (Invoke-WithStubs -Root $run.Root -Script (Join-Path $scriptsRoot "health-check.ps1") -Environment $Environment).Output
+    }
+    finally {
+        Pop-Location
+    }
+}
+
+function New-DoctorProject {
+    # A git work tree whose toolkit policy names TestCommand, if any.
+    param([string[]]$TestCommand = @())
+    $project = Join-Path (New-ScratchRoot) "project"
+    New-Item -ItemType Directory -Path (Join-Path $project ".git") -Force | Out-Null
+    if ($TestCommand.Count -gt 0) {
+        $policyDirectory = Join-Path $project ".tlc\harness"
+        New-Item -ItemType Directory -Path $policyDirectory -Force | Out-Null
+        $policy = @{ version = 1; grind = @{ testCommand = $TestCommand } } | ConvertTo-Json -Depth 5
+        [System.IO.File]::WriteAllText((Join-Path $policyDirectory "config.json"), $policy)
+    }
+    return $project
+}
+
+Test-Case -Name "DR1 doctor warns when the gate test command starts with a shim the gate cannot start, and passes an .exe" -Check {
+    $shim = Invoke-ProjectDoctor -Project (New-DoctorProject -TestCommand @("npm", "test"))
+    if ($shim -notmatch "WARN\s+the gate test command starts with 'npm'[^\r\n]*wrap it: cmd /c npm test") { return ("no shim warning: " + $shim) }
+
+    $exe = Invoke-ProjectDoctor -Project (New-DoctorProject -TestCommand @("powershell.exe", "-NoProfile", "-File", "scripts/test.ps1"))
+    if ($exe -notmatch "OK\s+gate test command: powershell\.exe -NoProfile -File scripts/test\.ps1") { return ("the .exe command was not passed: " + $exe) }
+    if ($exe -match "the gate test command starts with") { return "the .exe command was warned about" }
+
+    $none = Invoke-ProjectDoctor -Project (New-DoctorProject)
+    if (($none -notmatch "no gate test command") -and ($none -notmatch "gate test command:")) { return ("a project with no command was not reported: " + $none) }
+    return $true
+}
+
+Test-Case -Name "DR2 doctor reports grind on or off from tlc harness status, and has no project section outside git" -Check {
+    $project = New-DoctorProject -TestCommand @("powershell.exe", "-File", "x.ps1")
+    $on = Invoke-ProjectDoctor -Project $project -Environment @{ HARNESS_STUB_GRIND = "true" }
+    if ($on -notmatch "grind is on") { return ("grind on was not reported: " + $on) }
+    $off = Invoke-ProjectDoctor -Project $project -Environment @{ HARNESS_STUB_GRIND = "false" }
+    if ($off -notmatch "grind is off[^\r\n]*tlc harness grind on") { return ("grind off was not reported: " + $off) }
+
+    $outside = Invoke-ProjectDoctor -Project (New-ScratchRoot) -Environment @{ HARNESS_STUB_GRIND = "true" }
+    if ($outside -match "(?m)^Project: ") { return "doctor printed a project section outside a git work tree" }
+    return $true
+}
+
+Test-Case -Name "DR3 doctor warns about a 1.x gate left in the project and points to tazuna init" -Check {
+    $project = New-DoctorProject
+    $hook = Join-Path $project ".claude\hooks\require-verification.ps1"
+    New-Item -ItemType Directory -Path (Split-Path -Parent $hook) -Force | Out-Null
+    Set-Content -LiteralPath $hook -Value "exit 0"
+    $output = Invoke-ProjectDoctor -Project $project
+    if ($output -notmatch "WARN\s+the Tazuna 1\.x gate is still here[^\r\n]*run: tazuna init") { return ("no 1.x warning: " + $output) }
+    return $true
+}
+
 Test-Case -Name "V14 the self-test leaves the persisted user PATH as it found it" -Check {
     $now = [Environment]::GetEnvironmentVariable("PATH", "User")
     if ($now -ne $userPathAtStart) { return "the user PATH changed during the self-test: '$userPathAtStart' -> '$now'" }
