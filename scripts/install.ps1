@@ -245,6 +245,59 @@ foreach ($install in $installs) {
     }
 }
 
+# why: an upgrade must take away what the previous version installed and this one no longer
+# ships. Each root keeps a record of what Tazuna wrote there and its hash; a file in the record
+# that user/ no longer has is removed while unchanged, and kept with a warning once edited.
+# settings.json stays out of the record: it is merged, and holds keys that are not Tazuna's.
+$roots = @()
+if (-not $NoClaude) { $roots += [PSCustomObject]@{ Root = $target; Backup = $backupRoot; Prefix = "" } }
+if ($hasCursor) { $roots += [PSCustomObject]@{ Root = $cursorDir; Backup = $cursorBackup; Prefix = "cursor: " } }
+
+$removed = 0
+
+foreach ($root in $roots) {
+
+    $current = @($installs | Where-Object { ($_.Root -eq $root.Root) -and ($_.Relative -ne "settings.json") } | ForEach-Object { $_.Relative })
+    $recordFile = Join-Path $root.Root ".tazuna-installed.json"
+    $previous = @{}
+
+    if (Test-Path -LiteralPath $recordFile) {
+        foreach ($entry in (Get-Content -LiteralPath $recordFile -Raw | ConvertFrom-Json).files.PSObject.Properties) {
+            $previous[$entry.Name] = @($entry.Value)
+        }
+    }
+
+    foreach ($relative in @($previous.Keys | Sort-Object)) {
+
+        if ($current -contains $relative) { continue }
+
+        $result = Remove-FileIfUnchanged `
+            -TargetFile (Join-Path $root.Root $relative) `
+            -Sha256 $previous[$relative] `
+            -BackupRoot $root.Backup `
+            -BackupRelativePath $relative `
+            -StopAt $root.Root `
+            -WhatIf:$WhatIfPreference
+
+        if ($result -eq "Removed") {
+            $removed++
+            if ($WhatIfPreference) { Write-Status -Label "WHATIF" -Detail "would remove $($root.Prefix)$relative, no longer shipped" }
+            else { Write-Status -Label "REMOVE" -Detail "$($root.Prefix)$relative, no longer shipped" }
+        }
+        elseif ($result -eq "Kept") {
+            Write-Status -Label "WARN" -Detail "kept $($root.Prefix)$($relative): no longer shipped, but edited since Tazuna installed it; delete it yourself if unused"
+        }
+    }
+
+    if ((-not $WhatIfPreference) -and (Test-Path -LiteralPath $root.Root)) {
+        $files = [ordered]@{}
+        foreach ($relative in ($current | Sort-Object)) {
+            $files[$relative] = Get-FileSha256 -Path (Join-Path $root.Root $relative)
+        }
+        Set-Utf8Content -Path $recordFile -Value ((@{ files = $files }) | ConvertTo-Json -Depth 5)
+    }
+}
+
 if ($ruleStage) {
     Remove-Item -LiteralPath $ruleStage -Recurse -Force -WhatIf:$false
 }
@@ -323,13 +376,13 @@ elseif ((-not $onPath) -or $staleRoot) {
 Write-Host ""
 
 if ($WhatIfPreference) {
-    Write-Host ("Dry run: {0} to create, {1} to update, {2} unchanged. Nothing was changed." -f $created, $updated, $unchanged)
+    Write-Host ("Dry run: {0} to create, {1} to update, {2} unchanged, {3} to remove. Nothing was changed." -f $created, $updated, $unchanged, $removed)
 }
 else {
-    Write-Host ("Installed: {0} created, {1} updated, {2} unchanged." -f $created, $updated, $unchanged)
+    Write-Host ("Installed: {0} created, {1} updated, {2} unchanged, {3} removed." -f $created, $updated, $unchanged, $removed)
 }
 
-if ($updated -gt 0) {
+if (($updated + $removed) -gt 0) {
     foreach ($backup in @(@($installs | ForEach-Object { $_.Backup }) | Select-Object -Unique | Where-Object { Test-Path -LiteralPath $_ })) {
         Write-Host ""
         Write-Host "Previous versions backed up to:"

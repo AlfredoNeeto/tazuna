@@ -51,7 +51,7 @@ function Get-StatusMeaning {
         "^(OK|PASS|PRESENT|UNCHANGED|DONE)$"      { return "Green" }
         "^(FAIL|MISSING|ERROR|DENIED)$"           { return "Red" }
         "^(WARN|WHATIF|SKIP|PENDING|STALE)$"      { return "Yellow" }
-        "^(INSTALL|CREATE|UPDATE|ADDED|BACKUP)$"  { return "Cyan" }
+        "^(INSTALL|CREATE|UPDATE|ADDED|BACKUP|REMOVE)$"{ return "Cyan" }
         "^(MCP|PLUGIN|TOOL|PROFILE|POINTER)$"     { return "Magenta" }
         default                                    { return "Gray" }
     }

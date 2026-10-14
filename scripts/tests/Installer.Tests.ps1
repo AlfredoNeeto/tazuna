@@ -165,6 +165,77 @@ try {
         return $true
     }
 
+    function Invoke-InstallOutput {
+        # why: Write-Status writes to the console, which 6>&1 does not capture in this process; a child's output can be read.
+        param([string[]]$Arguments = @())
+        return (& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $scriptsRoot "install.ps1") @Arguments 2>&1 | Out-String)
+    }
+
+    function Add-RecordedFile {
+        # Plants a file as an earlier version would have installed it: on disk, and in the record with the hash it was written with.
+        param([string]$Relative, [string]$Written, [string]$OnDisk)
+        $path = Join-Path $scratch $Relative
+        New-Item -ItemType Directory -Path (Split-Path -Parent $path) -Force | Out-Null
+        Set-Utf8Content -Path $path -Value $Written
+        $hash = Get-FileSha256 -Path $path
+        if ($OnDisk) { Set-Utf8Content -Path $path -Value $OnDisk }
+        $recordFile = Join-Path $scratch ".tazuna-installed.json"
+        $record = Get-Content -LiteralPath $recordFile -Raw | ConvertFrom-Json
+        Add-Member -InputObject $record.files -NotePropertyName $Relative -NotePropertyValue $hash -Force
+        Set-Utf8Content -Path $recordFile -Value ($record | ConvertTo-Json -Depth 5)
+    }
+
+    Test-Case -Name "RM1 install records what it wrote, removes a recorded file it no longer ships with a backup, and a second run removes nothing" -Check {
+
+        & (Join-Path $scriptsRoot "install.ps1") 6>$null | Out-Null
+        $record = Get-Content -LiteralPath (Join-Path $scratch ".tazuna-installed.json") -Raw | ConvertFrom-Json
+        $recorded = @($record.files.PSObject.Properties.Name)
+        if ($recorded -contains "settings.json") { return "the record lists the merged settings.json" }
+        if ($recorded -notcontains "CLAUDE.md") { return ("the record lists: " + ($recorded -join ", ")) }
+        if ($record.files."CLAUDE.md" -ne (Get-FileSha256 -Path (Join-Path $scratch "CLAUDE.md"))) { return "the recorded hash of CLAUDE.md is not the installed file's" }
+
+        Add-RecordedFile -Relative "skills\retired-skill\SKILL.md" -Written "---`ndescription: shipped once`n---`n"
+        $output = Invoke-InstallOutput
+
+        if (Test-Path -LiteralPath (Join-Path $scratch "skills\retired-skill")) { return "the retired skill or its folder is still there" }
+        if ($output -notmatch "REMOVE\s+skills\\retired-skill\\SKILL\.md") { return ("no REMOVE line: " + $output) }
+        $backup = @(Get-ChildItem -LiteralPath (Join-Path $scratch ".harness-backup") -Recurse -Filter "SKILL.md" | Where-Object { $_.FullName -match "retired-skill" })
+        if ($backup.Count -eq 0) { return "the removed file was not backed up" }
+        $after = (Get-Content -LiteralPath (Join-Path $scratch ".tazuna-installed.json") -Raw | ConvertFrom-Json).files.PSObject.Properties.Name
+        if (@($after) -contains "skills\retired-skill\SKILL.md") { return "the record still lists the removed file" }
+
+        $again = Invoke-InstallOutput
+        if (($again -match "REMOVE\s") -or ($again -notmatch "0 removed")) { return ("a second run removed something: " + $again) }
+        return $true
+    }
+
+    Test-Case -Name "RM2 a recorded file edited since it was installed is kept with a warning" -Check {
+
+        & (Join-Path $scriptsRoot "install.ps1") 6>$null | Out-Null
+        Add-RecordedFile -Relative "skills\edited-skill\SKILL.md" -Written "shipped" -OnDisk "edited by the user"
+        $output = Invoke-InstallOutput
+
+        $path = Join-Path $scratch "skills\edited-skill\SKILL.md"
+        if (-not (Test-Path -LiteralPath $path)) { return "the edited file was removed" }
+        if ([System.IO.File]::ReadAllText($path) -ne "edited by the user") { return "the edited file was changed" }
+        if ($output -notmatch "WARN\s+kept skills\\edited-skill\\SKILL\.md") { return ("no WARN line: " + $output) }
+        Remove-Item -LiteralPath (Join-Path $scratch "skills\edited-skill") -Recurse -Force
+        return $true
+    }
+
+    Test-Case -Name "RM3 install -WhatIf names a removal and removes nothing" -Check {
+
+        & (Join-Path $scriptsRoot "install.ps1") 6>$null | Out-Null
+        Add-RecordedFile -Relative "agents\retired-agent.md" -Written "shipped once"
+        $output = Invoke-InstallOutput -Arguments @("-WhatIf")
+
+        if (-not (Test-Path -LiteralPath (Join-Path $scratch "agents\retired-agent.md"))) { return "-WhatIf removed the file" }
+        if ($output -notmatch "would remove agents\\retired-agent\.md") { return ("no WHATIF line: " + $output) }
+        & (Join-Path $scriptsRoot "install.ps1") 6>$null | Out-Null
+        if (Test-Path -LiteralPath (Join-Path $scratch "agents\retired-agent.md")) { return "the real run after -WhatIf did not remove it" }
+        return $true
+    }
+
     Test-Case -Name "health-check reports an orphaned skill" -Check {
 
         # Drift is two-directional. install.ps1 copies but never removes, so a

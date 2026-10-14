@@ -160,9 +160,78 @@ function Copy-FileIfChanged {
     return $result
 }
 
+function Remove-FileIfUnchanged {
+    <#
+    .SYNOPSIS
+        Deletes a file Tazuna installed, but only while it still holds what Tazuna wrote.
+    .DESCRIPTION
+        Returns 'Missing', 'Removed' or 'Kept'. A file whose SHA256 is one of
+        Sha256 is backed up under BackupRoot and deleted, and then each parent
+        directory left empty is removed up to, not including, StopAt. Any other
+        content is someone's edit, and is kept.
+
+        Every mutation happens inside the ShouldProcess guard, so -WhatIf
+        reports 'Removed' and writes nothing.
+    #>
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$TargetFile,
+
+        [Parameter(Mandatory = $true)]
+        [string[]]$Sha256,
+
+        [string]$BackupRoot,
+
+        [string]$BackupRelativePath,
+
+        [string]$StopAt
+    )
+
+    if (-not (Test-Path -LiteralPath $TargetFile -PathType Leaf)) {
+        return "Missing"
+    }
+
+    if ($Sha256 -notcontains (Get-FileSha256 -Path $TargetFile)) {
+        return "Kept"
+    }
+
+    if ($WhatIfPreference -or (-not $PSCmdlet.ShouldProcess($TargetFile, "Remove harness file"))) {
+        return "Removed"
+    }
+
+    if ($BackupRoot) {
+
+        if (-not $BackupRelativePath) {
+            $BackupRelativePath = Split-Path -Leaf $TargetFile
+        }
+
+        $backupFile = Join-Path $BackupRoot $BackupRelativePath
+        New-Item -ItemType Directory -Path (Split-Path -Parent $backupFile) -Force | Out-Null
+        Copy-Item -LiteralPath $TargetFile -Destination $backupFile -Force
+    }
+
+    Remove-Item -LiteralPath $TargetFile -Force
+
+    if ($StopAt) {
+        $stop = [System.IO.Path]::GetFullPath($StopAt).TrimEnd([System.IO.Path]::DirectorySeparatorChar)
+        $directory = Split-Path -Parent ([System.IO.Path]::GetFullPath($TargetFile))
+
+        while ($directory -and ($directory.Length -gt $stop.Length) -and
+               $directory.StartsWith($stop, [System.StringComparison]::OrdinalIgnoreCase) -and
+               (@(Get-ChildItem -LiteralPath $directory -Force).Count -eq 0)) {
+            Remove-Item -LiteralPath $directory -Force
+            $directory = Split-Path -Parent $directory
+        }
+    }
+
+    return "Removed"
+}
+
 Export-ModuleMember -Function @(
     "Test-FileContentEqual",
     "Set-Utf8Content",
     "Get-FileSha256",
-    "Copy-FileIfChanged"
+    "Copy-FileIfChanged",
+    "Remove-FileIfUnchanged"
 )
