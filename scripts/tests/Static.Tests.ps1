@@ -185,25 +185,19 @@ Test-Case -Name "no blanket shell allow rule" -Check {
     return ($blanket -join ", ")
 }
 
-Test-Case -Name "user settings protect the gate from being disarmed" -Check {
+Test-Case -Name "GD1 user settings keep the agent off the project's hook wiring, and no longer guard the removed 1.x gate" -Check {
 
-    # A gate that the agent can edit is not a deterministic mechanism. These
-    # rules are ./-anchored so they cover a project's own .claude/, not the
-    # template sources, which live under templates/<type>/dot-claude/.
+    # After /harness-init, .claude/settings.json holds the toolkit's project hooks,
+    # and the toolkit's own floor protects only the user-level settings file. A
+    # gate the agent can unwire is not a deterministic mechanism.
     $settings = Get-Content -LiteralPath (Join-Path $repoRoot "user\settings.json") -Raw | ConvertFrom-Json
     $deny = @($settings.permissions.deny)
 
-    $required = @(
-        "Edit(./.claude/state/**)",
-        "Edit(./.claude/hooks/**)",
-        "Edit(./.claude/scripts/**)",
-        "Edit(./.claude/settings.json)"
-    )
+    if ($deny -notcontains "Edit(./.claude/settings.json)") { return "no Edit(./.claude/settings.json) deny rule" }
 
-    $missing = @($required | Where-Object { $deny -notcontains $_ })
-
-    if ($missing.Count -eq 0) { return $true }
-    return ("missing gate-integrity deny rules: " + ($missing -join ", "))
+    $stale = @($deny | Where-Object { @("Edit(./.claude/state/**)", "Edit(./.claude/hooks/**)", "Edit(./.claude/scripts/**)") -contains $_ })
+    if ($stale.Count -gt 0) { return ("still guards the 1.x gate: " + ($stale -join ", ")) }
+    return $true
 }
 
 Test-Case -Name "user settings deny push and secret reads" -Check {

@@ -4,12 +4,12 @@
   "syncClaudeAiSkills": false,
   "syncClaudeAiPlugins": false,
   "skillOverrides": {
-    "harness-init": "off",
     "humanizer": "user-invocable-only"
   },
   "permissions": {
     "defaultMode": "default",
     "allow": [
+      "Read(~/.claude/skills/**)",
       "Bash(git status:*)",
       "Bash(git diff:*)",
       "Bash(git log:*)",
@@ -165,9 +165,6 @@
       "PowerShell(helm uninstall:*)",
       "Bash(helm delete:*)",
       "PowerShell(helm delete:*)",
-      "Edit(./.claude/state/**)",
-      "Edit(./.claude/hooks/**)",
-      "Edit(./.claude/scripts/**)",
       "Edit(./.claude/settings.json)",
       "Read(**/.env)",
       "Read(**/.env.*)",

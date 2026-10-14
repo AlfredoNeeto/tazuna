@@ -162,18 +162,14 @@ Test-Case -Name "-Path defaults to the current directory, not the process one" -
     return $true
 }
 
-Test-Case -Name "user settings hide the toolkit's harness-init skill" -Check {
+Test-Case -Name "HI1 user settings leave the toolkit's harness-init skill visible, and let skills read their own folder" -Check {
 
-    # `tlc harness install` links harness-init into ~/.claude/skills on every
-    # install and update, and its doctor fails when the link is gone - so it is
-    # hidden rather than deleted. Run in a project, it would write the toolkit's
-    # hooks into .claude/settings.json and gitignore that file, which `harness
-    # init` exists to avoid. "off" hides it from the model and from the / menu.
+    # 2.0 hands every project to /harness-init, so hiding it would hide the next step.
     $settings = Get-Content -LiteralPath (Join-Path $repoRoot "user\settings.json") -Raw | ConvertFrom-Json
 
-    if (-not $settings.PSObject.Properties["skillOverrides"]) { return "no skillOverrides in user/settings.json" }
-    if ($settings.skillOverrides."harness-init" -ne "off") { return "harness-init is '$($settings.skillOverrides."harness-init")', expected 'off'" }
-
+    if ($settings.skillOverrides.PSObject.Properties["harness-init"]) { return "harness-init is overridden to '$($settings.skillOverrides."harness-init")'" }
+    # why: a skill reading its references/ outside the project would otherwise stop on a permission prompt.
+    if (@($settings.permissions.allow) -notcontains "Read(~/.claude/skills/**)") { return "no Read(~/.claude/skills/**) allow rule" }
     return $true
 }
 
