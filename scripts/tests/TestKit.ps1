@@ -303,27 +303,6 @@ $catalogNames = @($catalog.PSObject.Properties.Name)
 
 $readme = Get-Content -LiteralPath (Join-Path $repoRoot "README.md") -Raw -Encoding UTF8
 
-$readmeSections = @("About the project", "Getting started", "Usage", "How it works", "Safety", "Troubleshooting", "Contributing", "License", "Acknowledgments")
-
-function Get-ReadmeSection {
-    # The body of one "## " section of the README, up to the next "## " or the end.
-    param([string]$Heading)
-    $match = [regex]::Match($readme, '(?s)(?:^|\n)## ' + [regex]::Escape($Heading) + '[ \t]*\r?\n(.*?)(?=\n## |\z)')
-    if (-not $match.Success) { return $null }
-    return $match.Groups[1].Value
-}
-
-function Get-MermaidBlock {
-    param([string]$Text)
-    return @([regex]::Matches($Text, '(?ms)^```mermaid[ \t]*\r?$(.*?)^```') | ForEach-Object { $_.Groups[1].Value })
-}
-
-function Get-MermaidKind {
-    param([string]$Block)
-    $first = @($Block -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ -and -not $_.StartsWith("%%") })[0]
-    return ($first -split "\s+")[0]
-}
-
 function Clear-ScratchRoot {
     foreach ($root in $script:scratchRoots) {
         Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
