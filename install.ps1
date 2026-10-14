@@ -26,8 +26,10 @@
     would be a harness that cannot update itself or tell you when it has drifted.
 
     Set $env:TAZUNA_PATH first to clone somewhere other than the default.
-    Running it again on a machine that already has the harness is safe: it
-    re-runs bootstrap, which is idempotent, and never touches the working tree.
+    Running it again on a machine that already has the harness replaces the
+    installed version: it runs that clone's update.ps1, which fast-forwards to
+    the newest version and then runs setup. A clone with local changes or local
+    commits is refused, never overwritten.
 
 .NOTES
     Piped into iex, this runs code fetched over the network without review. That
@@ -65,7 +67,7 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
 if (Test-Path -LiteralPath $target) {
 
     # Never clone over something that is already there. A directory at this path
-    # is either this harness, in which case bootstrap is the right next step, or
+    # is either this harness, in which case updating it is the right next step, or
     # someone else's work, in which case stopping is the only safe answer.
     $isHarness = Test-Path -LiteralPath (Join-Path $target (Join-Path "scripts" "bootstrap.ps1"))
 
@@ -75,7 +77,13 @@ if (Test-Path -LiteralPath $target) {
         exit 1
     }
 
-    Write-Host "Already cloned. Running bootstrap to install or repair."
+    # why: bootstrap alone would reinstall whatever version the clone holds; update.ps1
+    # fast-forwards it first, so the newest version replaces the installed one.
+    Write-Host "Already cloned. Updating it, then running setup."
+
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $target (Join-Path "scripts" "update.ps1"))
+
+    exit $LASTEXITCODE
 }
 else {
 

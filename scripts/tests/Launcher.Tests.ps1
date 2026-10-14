@@ -17,13 +17,14 @@ function Get-BuiltLauncher {
 }
 
 function New-FakeHarness {
-    # invariant: install.ps1 treats a directory holding scripts\bootstrap.ps1 as the harness and runs that file.
+    # invariant: install.ps1 treats a directory holding scripts\bootstrap.ps1 as the harness and runs its scripts\update.ps1.
     param([int]$ExitCode, [string]$Marker = "")
     $target = Join-Path (New-ScratchRoot) "tazuna"
     New-Item -ItemType Directory -Path (Join-Path $target "scripts") -Force | Out-Null
     $body = "exit $ExitCode"
     if ($Marker) { $body = "Set-Content -LiteralPath '$Marker' -Value done`r`n" + $body }
-    Set-Content -LiteralPath (Join-Path $target "scripts\bootstrap.ps1") -Value $body
+    Set-Content -LiteralPath (Join-Path $target "scripts\bootstrap.ps1") -Value "exit 0"
+    Set-Content -LiteralPath (Join-Path $target "scripts\update.ps1") -Value $body
     return $target
 }
 

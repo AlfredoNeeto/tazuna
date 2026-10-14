@@ -131,9 +131,10 @@ try {
     }
 
     Test-Case -Name "R8 install.ps1 clones the tazuna repository into HOME\tazuna by default" -Check {
-        $default = Join-Path $HOME "tazuna"
-        if (Test-Path -LiteralPath $default) { return "$default exists; refusing to run the installer against it" }
-        $run = Invoke-InstallerWithGitStub -Environment @{ TAZUNA_PATH = "" }
+        # why: a scratch USERPROFILE is the child's $HOME, so a real install on this machine cannot get in the way.
+        $scratchHome = New-ScratchRoot
+        $default = Join-Path $scratchHome "tazuna"
+        $run = Invoke-InstallerWithGitStub -Environment @{ TAZUNA_PATH = ""; USERPROFILE = $scratchHome }
         $expected = "git clone https://github.com/AlfredoNeeto/tazuna.git $default"
         if ($run.Calls -notcontains $expected) { return ("calls: " + ($run.Calls -join "; ")) }
         return $true
@@ -144,6 +145,58 @@ try {
         $run = Invoke-InstallerWithGitStub -Environment @{ TAZUNA_PATH = $target }
         $expected = "git clone https://github.com/AlfredoNeeto/tazuna.git $target"
         if ($run.Calls -notcontains $expected) { return ("calls: " + ($run.Calls -join "; ")) }
+        return $true
+    }
+
+    function New-InstalledClone {
+        # A bare origin and a clone of it holding the real update.ps1 and its modules, and a
+        # bootstrap.ps1 that only records that setup ran.
+        $root = New-ScratchRoot
+        $seed = Join-Path $root "seed"
+        foreach ($relative in @("scripts\update.ps1", "scripts\lib\Console.psm1", "scripts\lib\Git.psm1")) {
+            $path = Join-Path $seed $relative
+            New-Item -ItemType Directory -Path (Split-Path -Parent $path) -Force | Out-Null
+            Copy-Item -LiteralPath (Join-Path $repoRoot $relative) -Destination $path
+        }
+        $log = Join-Path $root "setup.log"
+        Set-Content -LiteralPath (Join-Path $seed "scripts\bootstrap.ps1") -Value ("Add-Content -LiteralPath '" + $log + "' -Value setup")
+        Set-Content -LiteralPath (Join-Path $seed "version.txt") -Value "1"
+        $origin = Join-Path $root "origin.git"
+        $clone = Join-Path $root "clone"
+        $git = @("-c", "user.name=harness", "-c", "user.email=harness@example.invalid", "-c", "core.autocrlf=false")
+        & git -c init.defaultBranch=main init -q $seed
+        & git -C $seed @git add -A
+        & git -C $seed @git commit -q -m one
+        & git clone -q --bare $seed $origin
+        & git clone -q $origin $clone
+        # The newer version reaches origin after the clone was made.
+        Set-Content -LiteralPath (Join-Path $seed "version.txt") -Value "2"
+        & git -C $seed @git commit -q -am two
+        & git -C $origin fetch -q $seed main:main
+        return [PSCustomObject]@{ Clone = $clone; Log = $log; Git = $git }
+    }
+
+    Test-Case -Name "R15 install.ps1 on an existing clone fast-forwards it to the newest version, then runs setup" -Check {
+        $fixture = New-InstalledClone
+        $run = Invoke-WithStubs -Root (Split-Path -Parent $fixture.Clone) -Script (Join-Path $repoRoot "install.ps1") -Environment @{ TAZUNA_PATH = $fixture.Clone }
+        if ($run.Code -ne 0) { return "install.ps1 exited $($run.Code): $($run.Output)" }
+        $version = ([System.IO.File]::ReadAllText((Join-Path $fixture.Clone "version.txt"))).Trim()
+        if ($version -ne "2") { return "the clone still holds version $version" }
+        if (-not (Test-Path -LiteralPath $fixture.Log)) { return "setup did not run after the update" }
+        return $true
+    }
+
+    Test-Case -Name "R16 install.ps1 refuses a clone with local changes or local commits, keeps them, and runs no setup" -Check {
+        foreach ($shape in @("changed", "committed")) {
+            $fixture = New-InstalledClone
+            $file = Join-Path $fixture.Clone "version.txt"
+            Set-Content -LiteralPath $file -Value "mine"
+            if ($shape -eq "committed") { $git = $fixture.Git; & git -C $fixture.Clone @git commit -q -am mine }
+            $run = Invoke-WithStubs -Root (Split-Path -Parent $fixture.Clone) -Script (Join-Path $repoRoot "install.ps1") -Environment @{ TAZUNA_PATH = $fixture.Clone }
+            if ($run.Code -eq 0) { return "a $shape clone was accepted: $($run.Output)" }
+            if (([System.IO.File]::ReadAllText($file)).Trim() -ne "mine") { return "the $shape clone lost its local version.txt" }
+            if (Test-Path -LiteralPath $fixture.Log) { return "setup ran on a $shape clone" }
+        }
         return $true
     }
 
