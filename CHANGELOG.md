@@ -1,5 +1,50 @@
 # Changelog
 
+## 2.0.0
+
+Tazuna now sets up the machine and leaves each project to harness-toolkit. Its own verification
+gate and project templates are gone; a project's gate is harness-toolkit's `grind`, set up by
+`/harness-init`.
+
+### Removed
+
+- The verification gate: the `Stop`, `SessionStart` and `PreToolUse` project hooks,
+  `verify.ps1` with its stack detection, and `VerifyCommon.psm1`. `grind` runs the project's test
+  command when a turn ends, keeps its result per session and retries up to a limit.
+- The secret check before a commit and the project hook that refused `git push` behind a git
+  global option. The `deny` rules still stop `git push`, but not `git -C . push`, and Cursor has
+  no permission rules: there harness-toolkit stops only `push --force`.
+- The `dotnet` and `generic` project templates, with their `AGENTS.md`, permissions and stack
+  rules, and the workspace-trust step.
+- The `fix-bug` skill. `user/CLAUDE.md` keeps its rule: a failing test first, then the root cause.
+
+### Changed
+
+- `tazuna init` moves a project set up by 1.x off the old gate, with a backup, then points to
+  `/harness-init`. It removes `verify.ps1` and the stack rules only while they are what 1.x
+  wrote; an edited `verify.ps1` is kept and its steps are printed as the gate command.
+- Running the installer again updates the clone before setup, so it replaces the installed
+  version. A clone with local changes or local commits is refused.
+- `tazuna setup` records what it installs in `.tazuna-installed.json` and removes, on a later
+  run, what a newer version no longer ships, keeping an edited copy with a warning. On a 1.x
+  machine it removes `fix-bug`.
+- `tazuna doctor` run inside a project warns about a 1.x gate left there and about a gate test
+  command the toolkit cannot start (a `.cmd` or `.ps1`), and says whether `grind` is on.
+- `harness-init` is no longer hidden. The `Edit` deny rules that guarded the old gate are gone;
+  `Edit(./.claude/settings.json)` stays.
+- Setup also installs modular-design-principles, evolutionary-modular-architecture,
+  modular-decomposition, the-judge, coding-guidelines, security-best-practices,
+  security-threat-model, create-adr and create-rfc. Pins: harness-toolkit 0.16.3, agent-skills
+  1.5.0, skills catalog 0.17.9, agent-skills-mcp 0.1.7.
+- `ship` verifies with the test command `tlc harness status` names for the project.
+- The self-test keeps the documentation checks that guard behaviour and drops the ones that froze
+  README prose and the mascot's look.
+
+### Upgrading from 1.x
+
+Run the installer again or `tazuna update`. In each project 1.x set up, run `tazuna init`, then
+`/harness-init`, `tlc harness gate test-command <command>` and `tlc harness grind on`.
+
 ## 1.5.0
 
 ### Changed

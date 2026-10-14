@@ -12,7 +12,7 @@ function Get-HarnessManifest {
         doctor and init cannot disagree about them.
     #>
     return [PSCustomObject]@{
-        Version            = "1.5.0"
+        Version            = "2.0.0"
         ToolkitPackage     = "@tech-leads-club/harness-toolkit@0.16.3"
         AgentSkillsPackage = "@tech-leads-club/agent-skills@1.5.0"
         # why: the version of @tech-leads-club/skills-catalog the CLI downloads; without it, the newest.

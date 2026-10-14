@@ -4,7 +4,7 @@
 
 <h1>Tazuna</h1>
 
-[![version](https://img.shields.io/badge/version-1.5.0-bd2e37?style=flat-square&labelColor=0c0809)](CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-2.0.0-bd2e37?style=flat-square&labelColor=0c0809)](CHANGELOG.md)
 [![agent](https://img.shields.io/badge/agent-Claude%20Code%202.1.296%2B%20or%20Cursor-7f1721?style=flat-square&labelColor=0c0809)](#prerequisites)
 [![Windows PowerShell](https://img.shields.io/badge/Windows%20PowerShell-5.1-6a4716?style=flat-square&labelColor=0c0809)](#prerequisites)
 [![license](https://img.shields.io/badge/license-MIT-a5752a?style=flat-square&labelColor=0c0809)](LICENSE)
