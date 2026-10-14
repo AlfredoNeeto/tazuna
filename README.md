@@ -70,7 +70,7 @@ git clone https://github.com/AlfredoNeeto/tazuna.git "$HOME\tazuna"; & "$HOME\ta
 $env:Path += ";$HOME\tazuna\bin"
 ```
 
-`setup` installs `harness-toolkit` 0.16.2 and runs `tlc harness install`, installs the `tlc-*` and `harness-eval` skills from the pinned skills catalog 0.17.8 and the user MCP servers, then runs `tazuna doctor`. Running it again repairs a machine that drifted. For Claude Code it also copies `user/` into `~/.claude` and adds the `ponytail` plugin. It replaces `~/.claude/CLAUDE.md` and, in `~/.claude/settings.json`, the keys Tazuna ships, keeps your other keys and a backup of what it replaces in `~/.claude\.harness-backup\`; those settings switch off the claude.ai connectors and sync (`disableClaudeAiConnectors`). For Cursor it puts the skills, the instructions as a rule, the toolkit hooks and the servers under `~/.cursor`, and with both installed it equips both. Run `setup` and `update` outside the agent, and call `bin\tazuna.cmd` rather than the `.ps1`, which an `AllSigned` execution policy blocks.
+`setup` installs `harness-toolkit` 0.16.3 and runs `tlc harness install`, installs the `tlc-*`, `harness-eval`, modular-architecture, security, `the-judge`, `coding-guidelines`, `create-adr` and `create-rfc` skills from the pinned skills catalog 0.17.9 and the user MCP servers, then runs `tazuna doctor`. Running it again repairs a machine that drifted. For Claude Code it also copies `user/` into `~/.claude` and adds the `ponytail` plugin. It replaces `~/.claude/CLAUDE.md` and, in `~/.claude/settings.json`, the keys Tazuna ships, keeps your other keys and a backup of what it replaces in `~/.claude\.harness-backup\`; those settings switch off the claude.ai connectors and sync (`disableClaudeAiConnectors`). For Cursor it puts the skills, the instructions as a rule, the toolkit hooks and the servers under `~/.cursor`, and with both installed it equips both. Run `setup` and `update` outside the agent, and call `bin\tazuna.cmd` rather than the `.ps1`, which an `AllSigned` execution policy blocks.
 
 ### Your first project
 
@@ -248,7 +248,7 @@ The gate compares a fingerprint of the code with the last passing run, blocks on
 | No secret gets into a commit | the `PreToolUse` hook (`beforeShellExecution` in Cursor), which inspects what the commit will contain, a `git add` in the same command included |
 | Nothing is published or destroyed without you: `git push`, `reset --hard`, `clean`, `gh pr create`, `terraform apply` are denied, `commit` asks | permissions in `~/.claude/settings.json`; the `PreToolUse` hook also refuses `git push` however git is called and, behind any git global option such as `git -C .`, a push or a destructive git command in that call, in Cursor too, which has no permission rules of its own. It reads the command text: a guard against mistakes, not a sandbox |
 | Secrets stay out of the context: `.env`, `*.pem` and `~/.ssh` are unreadable, secret-looking output is masked | Claude Code permissions and `harness-toolkit` |
-| Nothing is destroyed outside the repository, and `push --force` is denied | the `harness-toolkit` floor, which in 0.16.2 sees only Bash tool commands; for PowerShell the `deny` rules hold |
+| Nothing is destroyed outside the repository, and `push --force` is denied | the `harness-toolkit` floor, which in 0.16.3 sees only Bash tool commands; for PowerShell the `deny` rules hold |
 | No feature is done without independent proof | the Verifier and `validate_verification.py` |
 
 ## Troubleshooting

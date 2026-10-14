@@ -432,7 +432,7 @@ try {
     }
 
     Test-Case -Name "R14 the Tech Leads Club names keep the word harness" -Check {
-        if ($manifest.ToolkitPackage -ne "@tech-leads-club/harness-toolkit@0.16.2") { return "toolkit package is $($manifest.ToolkitPackage)" }
+        if ($manifest.ToolkitPackage -ne "@tech-leads-club/harness-toolkit@0.16.3") { return "toolkit package is $($manifest.ToolkitPackage)" }
         if ($manifest.AgentSkills -notcontains "harness-eval") { return "harness-eval is not in the skills list" }
         $bootstrap = Get-Content -LiteralPath (Join-Path $scriptsRoot "bootstrap.ps1") -Raw
         if (-not $bootstrap.Contains('@("harness", "install")')) { return "bootstrap no longer runs tlc harness install" }

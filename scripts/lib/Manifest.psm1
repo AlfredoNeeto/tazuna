@@ -13,11 +13,15 @@ function Get-HarnessManifest {
     #>
     return [PSCustomObject]@{
         Version            = "1.5.0"
-        ToolkitPackage     = "@tech-leads-club/harness-toolkit@0.16.2"
-        AgentSkillsPackage = "@tech-leads-club/agent-skills@1.4.10"
+        ToolkitPackage     = "@tech-leads-club/harness-toolkit@0.16.3"
+        AgentSkillsPackage = "@tech-leads-club/agent-skills@1.5.0"
         # why: the version of @tech-leads-club/skills-catalog the CLI downloads; without it, the newest.
-        SkillsCatalog      = "0.17.8"
-        AgentSkills        = @("tlc-discover", "tlc-spec-lean", "tlc-spec-driven", "tlc-plan", "tlc-implement", "harness-eval")
+        SkillsCatalog      = "0.17.9"
+        AgentSkills        = @(
+            "tlc-discover", "tlc-spec-lean", "tlc-spec-driven", "tlc-plan", "tlc-implement", "harness-eval",
+            "modular-design-principles", "evolutionary-modular-architecture", "modular-decomposition",
+            "the-judge", "coding-guidelines", "security-best-practices", "security-threat-model", "create-adr", "create-rfc"
+        )
         # why: the harness-toolkit hooks, agent-skills and the npx MCP servers refuse node below 24.
         MinimumNodeMajor     = 24
         # why: the version the hook "if" filter was proven on; AGENTS.md support landed earlier.

@@ -370,10 +370,10 @@ try {
         if ($unnamed.Count -gt 0) { return ("doctor did not name: " + ($unnamed -join ", ")) }
         return $true
     }
-    Test-Case -Name "U16 setup with Claude Code and Cursor installs the six skills for both in one call, -a claude-code cursor -g" -Check {
+    Test-Case -Name "U16 setup with Claude Code and Cursor installs the manifest skills for both in one call, -a claude-code cursor -g" -Check {
         $run = Get-CursorSetupRun -Key "both" -Cursor
         if ($run.Code -ne 0) { return "exit $($run.Code): $($run.Output)" }
-        $literal = "npx -y @tech-leads-club/agent-skills@1.4.10 install -s tlc-discover tlc-spec-lean tlc-spec-driven tlc-plan tlc-implement harness-eval -a claude-code cursor -g"
+        $literal = "npx -y @tech-leads-club/agent-skills@1.5.0 install -s tlc-discover tlc-spec-lean tlc-spec-driven tlc-plan tlc-implement harness-eval modular-design-principles evolutionary-modular-architecture modular-decomposition the-judge coding-guidelines security-best-practices security-threat-model create-adr create-rfc -a claude-code cursor -g"
         if ($run.Calls -notcontains $literal) { return "no call: $literal" }
         $skillCalls = @($run.Calls | Where-Object { $_.StartsWith("npx -y @tech-leads-club/agent-skills@") })
         if ($skillCalls.Count -ne 1) { return "expected one skills install, got $($skillCalls.Count): " + ($skillCalls -join " | ") }

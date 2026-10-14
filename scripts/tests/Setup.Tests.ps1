@@ -17,11 +17,11 @@ try {
 
     # S1 - setup
 
-    Test-Case -Name "C1 setup installs the six agent-skills with the pinned CLI, and review-change" -Check {
+    Test-Case -Name "C1 setup installs every manifest agent-skill with the pinned CLI, and review-change" -Check {
         $run = Get-SetupRun -Key "fresh"
         if ($run.Code -ne 0) { return "setup exited $($run.Code): $($run.Output)" }
         # The literal the check names, so a changed pin fails here instead of following along.
-        $literal = "npx -y @tech-leads-club/agent-skills@1.4.10 install -s tlc-discover tlc-spec-lean tlc-spec-driven tlc-plan tlc-implement harness-eval -a claude-code -g"
+        $literal = "npx -y @tech-leads-club/agent-skills@1.5.0 install -s tlc-discover tlc-spec-lean tlc-spec-driven tlc-plan tlc-implement harness-eval modular-design-principles evolutionary-modular-architecture modular-decomposition the-judge coding-guidelines security-best-practices security-threat-model create-adr create-rfc -a claude-code -g"
         if ($run.Calls -notcontains $literal) { return "no call: $literal" }
 
         $missing = @((@($manifest.AgentSkills) + "review-change") | Where-Object {
@@ -30,7 +30,7 @@ try {
         return $true
     }
 
-    Test-Case -Name "C36 setup installs the skills from the pinned catalog 0.17.8 and puts back the caller's SKILLS_CDN_REF" -Check {
+    Test-Case -Name "C36 setup installs the skills from the pinned catalog 0.17.9 and puts back the caller's SKILLS_CDN_REF" -Check {
         foreach ($scenario in @(@{ Key = "fresh"; Before = "" }, @{ Key = "catalog-preset"; Before = "9.9.9" })) {
 
             $environment = @{}
@@ -49,7 +49,7 @@ try {
 
                 # The literal the check names, so a changed pin fails here instead of following along.
                 $expected = "catalog " + $scenario.Before
-                if ($calls[$index].StartsWith("npx -y @tech-leads-club/agent-skills@1.4.10 ")) { $expected = "catalog 0.17.8"; $skillInstalls++ }
+                if ($calls[$index].StartsWith("npx -y @tech-leads-club/agent-skills@1.5.0 ")) { $expected = "catalog 0.17.9"; $skillInstalls++ }
                 elseif ($skillInstalls -gt 0) { $later++ }
 
                 if ($calls[$index + 1] -ne $expected) { return ("$($scenario.Key): '" + $calls[$index] + "' saw '" + $calls[$index + 1] + "', expected '" + $expected + "'") }
@@ -108,7 +108,7 @@ try {
         if ($unnamed.Count -gt 0) { return ("doctor did not name: " + ($unnamed -join ", ")) }
         return $true
     }
-    Test-Case -Name "C1 doctor fails naming each of the seven skills when absent" -Check {
+    Test-Case -Name "C1 doctor fails naming each manifest skill and review-change when absent" -Check {
         $run = Get-SetupRun -Key "fresh"
         $skills = @($manifest.AgentSkills) + "review-change"
         $moved = Join-Path $run.Root "moved-skills"
