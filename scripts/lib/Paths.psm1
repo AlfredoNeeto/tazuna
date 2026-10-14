@@ -83,33 +83,6 @@ function Resolve-HarnessPath {
     return [System.IO.Path]::GetFullPath((Join-Path $PWD.ProviderPath $Path))
 }
 
-function Get-ClaudeStateFile {
-    <#
-    .SYNOPSIS
-        Resolves Claude Code's machine-local state file, .claude.json.
-    .DESCRIPTION
-        It is NOT inside the configuration directory by default. The default
-        layout is ~/.claude/ for configuration and ~/.claude.json BESIDE it;
-        only under CLAUDE_CONFIG_DIR do both live in the same directory.
-
-        Getting this wrong writes a file Claude Code never reads, which is the
-        worst kind of wrong: it reports success and changes nothing.
-
-        The file holds per-project state, including hasTrustDialogAccepted, and
-        credentials. Never copy it into a project directory.
-    #>
-    [CmdletBinding()]
-    param()
-
-    $configured = $env:CLAUDE_CONFIG_DIR
-
-    if ($configured -and $configured.Trim() -ne "") {
-        return [System.IO.Path]::GetFullPath((Join-Path $configured.Trim() ".claude.json"))
-    }
-
-    return [System.IO.Path]::GetFullPath((Join-Path $HOME ".claude.json"))
-}
-
 function Get-CompatibleRelativePath {
     <#
     .SYNOPSIS
@@ -175,7 +148,6 @@ Export-ModuleMember -Function @(
     "Get-ClaudeConfigDir",
     "Get-CursorConfigDir",
     "Resolve-HarnessPath",
-    "Get-ClaudeStateFile",
     "Get-CompatibleRelativePath",
     "New-HarnessBackupRoot"
 )

@@ -38,8 +38,6 @@ Import-Module (Join-Path $PSScriptRoot "lib\Console.psm1") -Force
 Import-Module (Join-Path $PSScriptRoot "lib\Manifest.psm1") -Force
 Import-Module (Join-Path $PSScriptRoot "lib\Toolchain.psm1") -Force
 
-# Minimum Claude Code version that supports AGENTS.md, which the project
-# templates rely on for project-level instructions.
 $minimumClaudeVersion = [version](Get-HarnessManifest).MinimumClaudeVersion
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
@@ -142,20 +140,7 @@ else {
     Add-Failure "node 24+ required for the harness-toolkit hooks: winget install OpenJS.NodeJS.LTS"
 }
 
-$dotnet = Get-Command dotnet -ErrorAction SilentlyContinue
-
-if ($null -eq $dotnet) {
-    # Informational. The harness is not a .NET harness: the generic template
-    # detects Node, Python, Go, Rust and JVM projects too, and most machines
-    # will not have every toolchain the templates can serve.
-    Write-Host "  --        dotnet not on PATH (only needed for .NET projects)"
-}
-else {
-    Add-Pass "dotnet -> $($dotnet.Source)"
-}
-
-# The tlc-* skills run their validators as `python3`, and so does the
-# verification gate's spec-lean check. On Windows `python3` is often the
+# The tlc-* skills run their validators as `python3`. On Windows `python3` is often the
 # Microsoft Store alias: on PATH, and runs nothing. Only a run proves it.
 $pythonWorks = $false
 

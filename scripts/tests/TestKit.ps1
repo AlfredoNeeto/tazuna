@@ -117,8 +117,6 @@ function Get-RepoFile {
 
 # why: the fixtures below are used by more than one test file.
 
-$sharedRoot = Join-Path $repoRoot (Join-Path "templates" "_shared")
-
 # External programs are replaced by recording stubs placed first on PATH, and
 # the configuration directory is a scratch CLAUDE_CONFIG_DIR. What these prove
 # is our wiring to npm, tlc, npx and claude; that the upstream CLIs do what
@@ -289,11 +287,16 @@ function Get-SetupRun {
 $skillsLine = "npx -y " + $manifest.AgentSkillsPackage + " install -s " + ($manifest.AgentSkills -join " ") + " -a claude-code -g"
 
 function New-InitProject {
-    param([hashtable]$Files)
+    # A project holding Files (relative path -> text), and tazuna init run on it with Arguments.
+    param([hashtable]$Files, [string[]]$Arguments = @())
     $project = Join-Path (New-ScratchRoot) "project"
     New-Item -ItemType Directory -Path $project -Force | Out-Null
-    foreach ($name in $Files.Keys) { Set-Content -LiteralPath (Join-Path $project $name) -Value $Files[$name] -NoNewline }
-    $run = Invoke-WithStubs -Root (Split-Path -Parent $project) -Script (Join-Path $scriptsRoot "init-project.ps1") -Arguments @("-Path", $project, "-NoTrust")
+    foreach ($name in $Files.Keys) {
+        $path = Join-Path $project $name
+        New-Item -ItemType Directory -Path (Split-Path -Parent $path) -Force | Out-Null
+        [System.IO.File]::WriteAllText($path, $Files[$name])
+    }
+    $run = Invoke-WithStubs -Root (Split-Path -Parent $project) -Script (Join-Path $scriptsRoot "init-project.ps1") -Arguments (@("-Path", $project) + $Arguments)
     $run | Add-Member -NotePropertyName Project -NotePropertyValue $project
     return $run
 }

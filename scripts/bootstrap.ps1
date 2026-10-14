@@ -143,7 +143,7 @@ Test-Prerequisite -Command "git"    -Purpose "version control, the drift check a
 # Optional toolchains, listed so a new machine can see what it is missing. None
 # is required: the project templates detect whichever stack a repository uses.
 Test-Prerequisite -Command "dotnet" -Purpose ".NET projects" | Out-Null
-Test-Prerequisite -Command "python3" -Purpose "the tlc-* skill validators and the spec-lean completion gate" `
+Test-Prerequisite -Command "python3" -Purpose "the tlc-* skill validators" `
     -Install "winget install Python.Python.3.12" | Out-Null
 
 if ($blocking.Count -gt 0) {
@@ -428,8 +428,9 @@ if ($healthy -and (Test-RichConsole)) {
     Write-Panel -Lines @(
         ("Tazuna {0} - Harness installed {1}" -f $manifest.Version, $elapsed),
         "",
-        "Connect a project - from inside it, no arguments:",
-        "  tazuna init",
+        "Set up a project - from inside it, in Claude Code or Cursor:",
+        "  /harness-init",
+        "A project Tazuna 1.x set up needs, first:  tazuna init",
         "",
         "Then see which MCP servers a project can add:",
         "  tazuna mcp list")
@@ -455,7 +456,9 @@ if (-not $healthy) { exit 1 }
 # why: the rich panel above already says all of this; plain output keeps its lines for logs.
 if (Test-RichConsole) { exit 0 }
 
-Write-Host "Connect a project - from inside it, no arguments:"
+Write-Host "Set up a project - from inside it, in Claude Code or Cursor:"
+Write-Host "  /harness-init"
+Write-Host "A project Tazuna 1.x set up needs, first:"
 Write-Host "  cd C:\src\MyApp"
 Write-Host "  tazuna init"
 Write-Host ""

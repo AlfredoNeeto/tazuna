@@ -267,6 +267,12 @@ foreach ($root in $roots) {
         }
     }
 
+    # why: 1.x kept no record, so what it installed and 2.0 dropped is listed in the manifest.
+    $retired = (Get-HarnessManifest).Retired.Machine
+    foreach ($relative in $retired.Keys) {
+        $previous[$relative] = @(@($previous[$relative] | Where-Object { $_ }) + $retired[$relative])
+    }
+
     foreach ($relative in @($previous.Keys | Sort-Object)) {
 
         if ($current -contains $relative) { continue }

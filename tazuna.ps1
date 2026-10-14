@@ -12,7 +12,7 @@
 .EXAMPLE
     .\tazuna.ps1
     .\tazuna.ps1 doctor
-    tazuna init                             # from inside the project; detects the rest
+    tazuna init                             # from inside a project set up by Tazuna 1.x
     tazuna mcp add azure-devops
 #>
 # Deliberately NOT [CmdletBinding()]. An advanced function rejects a named
@@ -35,7 +35,7 @@ Import-Module (Join-Path $PSScriptRoot "scripts\lib\Manifest.psm1") -Force
 # is roughly the order you need them in.
 $commands = [ordered]@{
     "setup"  = @{ Script = "bootstrap.ps1";    Help = "Set up or repair this machine: toolkit, skills, MCP, then verify" }
-    "init"   = @{ Script = "init-project.ps1"; Help = "Connect the project you are in: AGENTS.md, verify.ps1, toolkit policy" }
+    "init"   = @{ Script = "init-project.ps1"; Help = "Move the project you are in off the 1.x gate, then point to /harness-init" }
     "mcp"    = @{ Script = "project-mcp.ps1";  Help = "Add an MCP to the project you are in:  mcp list | mcp add <name>" }
     "doctor" = @{ Script = "health-check.ps1"; Help = "Check the toolchain, the installed harness and drift against this repository" }
     "update" = @{ Script = "update.ps1";       Help = "Fast-forward this repository, then run setup again" }

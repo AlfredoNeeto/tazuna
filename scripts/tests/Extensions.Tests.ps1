@@ -425,11 +425,13 @@ Test-Case -Name "every slash command the documentation names exists" -Check {
 
     $known = @(Get-ChildItem -LiteralPath $repoRoot -Recurse -Filter "SKILL.md" | ForEach-Object { $_.Directory.Name })
     $known += @((Get-HarnessManifest).AgentSkills)
+    # why: `tlc harness install` installs harness-init; Tazuna hands every project to it.
+    $known += "harness-init"
 
     $documents = @(Get-Item -LiteralPath (Join-Path $repoRoot "README.md"), (Join-Path $repoRoot "AGENTS.md"))
     # resumo-* are notes about external material, not documentation of this harness.
     $documents += @(Get-ChildItem -LiteralPath (Join-Path $repoRoot "docs") -Filter *.md | Where-Object { -not $_.Name.StartsWith("resumo-") })
-    foreach ($folder in @("user", "templates", "mcp")) {
+    foreach ($folder in @("user", "mcp")) {
         $documents += @(Get-ChildItem -LiteralPath (Join-Path $repoRoot $folder) -Recurse -Filter *.md)
     }
 

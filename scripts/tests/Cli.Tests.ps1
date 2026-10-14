@@ -129,7 +129,7 @@ try {
     Test-Case -Name "X1 tazuna help init prints the synopsis and an example of init-project.ps1" -Check {
         $run = Invoke-Tazuna -Arguments @("help", "init")
         if ($run.Code -ne 0) { return "exit $($run.Code)" }
-        if (-not $run.Output.Contains("Installs a project harness template into an existing repository.")) { return "no synopsis: $($run.Output)" }
+        if (-not $run.Output.Contains("Moves a project off Tazuna 1.x's verification gate and hands it to harness-toolkit.")) { return "no synopsis: $($run.Output)" }
         if ($run.Output -notmatch '(?m)^\s+tazuna init\b') { return "no example line with init" }
         return $true
     }
@@ -258,17 +258,9 @@ try {
         }
         $runs += @{ Name = "setup -WhatIf over a changed CLAUDE.md"; Output = $changed.Output; Expect = @("would update CLAUDE\.md") }
 
-        $project = Join-Path (New-ScratchRoot) "project"
-        New-Item -ItemType Directory -Path $project -Force | Out-Null
-        $initFresh = Invoke-WithStubs -Root (Split-Path -Parent $project) -Script (Join-Path $scriptsRoot "init-project.ps1") -Arguments @("-Path", $project, "-WhatIf")
-        if (@(Get-ChildItem -LiteralPath $project -Force).Count -gt 0) { return "init -WhatIf wrote into the project" }
-        $runs += @{ Name = "init -WhatIf"; Output = $initFresh.Output; Expect = @("would install AGENTS\.md", "would create \.gitignore") }
-
-        $existing = New-InitProject -Files @{ "notes.txt" = "hello" }
-        Add-Content -LiteralPath (Join-Path $existing.Project "AGENTS.md") -Value "local edit"
-        $initForce = Invoke-WithStubs -Root (Split-Path -Parent $existing.Project) -Script (Join-Path $scriptsRoot "init-project.ps1") `
-            -Arguments @("-Path", $existing.Project, "-Force", "-NoTrust", "-WhatIf")
-        $runs += @{ Name = "init -Force -WhatIf over a changed AGENTS.md"; Output = $initForce.Output; Expect = @("would update AGENTS\.md") }
+        $legacy = New-InitProject -Files @{ ".claude\hooks\require-verification.ps1" = "exit 0"; ".gitignore" = ".claude/state/`n" } -Arguments @("-WhatIf")
+        if (-not (Test-Path -LiteralPath (Join-Path $legacy.Project ".claude\hooks\require-verification.ps1"))) { return "init -WhatIf removed the hook" }
+        $runs += @{ Name = "init -WhatIf on a 1.x project"; Output = $legacy.Output; Expect = @("would remove \.claude\\hooks\\require-verification\.ps1", "would remove \.claude/state/ from \.gitignore") }
 
         foreach ($run in $runs) {
             $bad = @([regex]::Matches($run.Output, $forbidden) | ForEach-Object { $_.Value.Trim() })
@@ -280,12 +272,14 @@ try {
         return $true
     }
 
-    Test-Case -Name "X13 a healthy setup ends with Harness installed, the elapsed time and tazuna init" -Check {
+    Test-Case -Name "X13 a healthy setup ends with Harness installed, the elapsed time, /harness-init and tazuna init" -Check {
         $run = Get-SetupRun -Key "fresh"
         if ($run.Code -ne 0) { return "exit $($run.Code)" }
         $done = [regex]::Match($run.Output, 'Harness installed in \d+s')
         if (-not $done.Success) { return "no 'Harness installed in <n>s'" }
-        if ($run.Output.IndexOf("tazuna init", $done.Index) -lt 0) { return "no 'tazuna init' after the summary" }
+        foreach ($next in @("/harness-init", "tazuna init")) {
+            if ($run.Output.IndexOf($next, $done.Index) -lt 0) { return "no '$next' after the summary" }
+        }
         return $true
     }
 
@@ -417,7 +411,7 @@ try {
         $rich = Invoke-HostCapture -Root (New-ScratchRoot) -Script (Join-Path $scriptsRoot "bootstrap.ps1") `
             -Environment @{ WT_SESSION = "self-test"; TAZUNA_PLAIN = $null; NO_COLOR = $null } -OwnConsole
         if ($rich.Code -ne 0) { return "rich setup exited $($rich.Code): $($rich.Output)" }
-        foreach ($text in @(([string][char]0x256D), ("Tazuna $version - Harness installed in"), "tazuna init")) {
+        foreach ($text in @(([string][char]0x256D), ("Tazuna $version - Harness installed in"), "/harness-init", "tazuna init")) {
             if (-not $rich.Output.Contains($text)) { return "the rich ending does not show '$text'" }
         }
         if ($rich.Output -match "DONE\s+Harness installed") { return "the rich ending still prints the plain DONE line" }

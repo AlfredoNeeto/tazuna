@@ -75,14 +75,14 @@ try {
         return $true
     }
 
-    Test-Case -Name "A2 each of the 20 moved functions is exported by exactly one library module" -Check {
-        $moved = @("Get-ClaudeConfigDir", "Get-ClaudeStateFile", "Resolve-HarnessPath", "Get-CompatibleRelativePath", "New-HarnessBackupRoot",
+    Test-Case -Name "A2 each of the 19 moved functions is exported by exactly one library module" -Check {
+        $moved = @("Get-ClaudeConfigDir", "Resolve-HarnessPath", "Get-CompatibleRelativePath", "New-HarnessBackupRoot",
             "Get-FileSha256", "Test-FileContentEqual", "Copy-FileIfChanged", "Set-Utf8Content",
             "Test-JsonFile", "Get-JsonCanonicalForm", "Test-JsonContentEqual",
             "Get-StatusColour", "Write-Status", "Write-Section", "Write-Banner",
             "Invoke-GitCommand", "Get-GitRoot", "Get-GitStatusSummary",
             "Get-HarnessManifest")
-        if ($moved.Count -ne 20) { return "the test lists $($moved.Count) names" }
+        if ($moved.Count -ne 19) { return "the test lists $($moved.Count) names" }
         $exports = Get-LibExport
         foreach ($function in $moved) {
             $owners = @($exports.Keys | Where-Object { $exports[$_] -contains $function })
@@ -143,16 +143,6 @@ try {
         $violations = @()
         foreach ($script in $scripts) { $violations += @(Find-MissingImport -Name $script.Name -Exports $exports -Text ([System.IO.File]::ReadAllText($script.FullName))) }
         if ($violations.Count -gt 0) { return ($violations -join "; ") }
-        return $true
-    }
-
-    Test-Case -Name "A8 no template references scripts/lib, and a planted reference is reported" -Check {
-        $scan = { param([string]$Text) $Text.Contains("scripts/lib") -or $Text.Contains("scripts\lib") }
-        if (-not (& $scan "Import-Module ..\..\scripts\lib\Paths.psm1")) { return "the scanner missed a planted reference" }
-        $templates = Join-Path $repoRoot "templates"
-        $hits = @(Get-RepoFile | Where-Object { $_.FullName.StartsWith($templates + "\") } |
-            Where-Object { & $scan ([System.IO.File]::ReadAllText($_.FullName)) } | ForEach-Object { $_.FullName })
-        if ($hits.Count -gt 0) { return ("references scripts/lib: " + ($hits -join ", ")) }
         return $true
     }
 
