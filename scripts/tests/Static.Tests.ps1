@@ -243,28 +243,23 @@ foreach ($skillFile in (Get-ChildItem -LiteralPath (Join-Path $repoRoot "user\sk
 
 Start-Section "Dogfooding"
 
-Test-Case -Name "the harness verification runs the self-test" -Check {
+Test-Case -Name "DF1 this repository carries none of the 1.x gate it no longer ships" -Check {
 
-    $ownVerify = Join-Path $repoRoot (Join-Path ".claude" (Join-Path "scripts" "verify.ps1"))
-
-    if (-not (Test-Path -LiteralPath $ownVerify)) { return "no .claude/scripts/verify.ps1" }
-
-    $hits = @(Select-String -Path $ownVerify -Pattern "test-harness.ps1")
-
-    if ($hits.Count -gt 0) { return $true }
-    return "verify.ps1 does not run test-harness.ps1, so the gate would pass without verifying anything"
+    # invariant: a copy of the old gate left here would keep firing beside grind and test nothing 2.0 ships.
+    $left = @(@(".claude\hooks", ".claude\scripts", ".claude\state", ".cursor\hooks.json") |
+        Where-Object { Test-Path -LiteralPath (Join-Path $repoRoot $_) })
+    if ($left.Count -gt 0) { return ("still here: " + ($left -join ", ") + "; run tazuna init on this repository") }
+    return $true
 }
 
-Test-Case -Name "the harness has its own project instructions" -Check {
+Test-Case -Name "the harness has its own project instructions, naming the self-test as its verification" -Check {
 
     $agents = Join-Path $repoRoot "AGENTS.md"
 
     if (-not (Test-Path -LiteralPath $agents)) { return "no AGENTS.md at the repository root" }
-
-    $hits = @(Select-String -Path $agents -Pattern 'verify\.ps1')
-
-    if ($hits.Count -gt 0) { return $true }
-    return "AGENTS.md does not name the verification command"
+    if (@(Select-String -Path $agents -Pattern 'test-harness\.ps1').Count -eq 0) { return "AGENTS.md does not name scripts\test-harness.ps1" }
+    if (@(Select-String -Path $agents -Pattern 'verify\.ps1').Count -gt 0) { return "AGENTS.md still names verify.ps1" }
+    return $true
 }
 
 Test-Case -Name "SK3 the kit skills keep their contract: fix-bug proves with a failing test, ship never publishes" -Check {

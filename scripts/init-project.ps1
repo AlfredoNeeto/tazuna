@@ -62,7 +62,7 @@ Write-Host ""
 function Write-Change {
     param([string]$Detail)
     $script:changes++
-    if ($WhatIfPreference) { Write-Status -Label "WHATIF" -Detail "would $Detail" }
+    if ($WhatIfPreference) { Write-Status -Label "WHATIF" -Detail "would remove $Detail" }
     else { Write-Status -Label "REMOVE" -Detail $Detail }
 }
 
@@ -78,7 +78,7 @@ function Save-Json {
     param([string]$Relative, [object]$Value)
     if ($WhatIfPreference) { return }
     Save-Backup -Relative $Relative
-    Set-Utf8Content -Path (Join-Path $projectRoot $Relative) -Value ($Value | ConvertTo-Json -Depth 100)
+    Set-Utf8Content -Path (Join-Path $projectRoot $Relative) -Value (($Value | ConvertTo-Json -Depth 100) + "`n")
 }
 
 function Test-TazunaHook {
@@ -99,7 +99,7 @@ foreach ($relative in $owned) {
     if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { continue }
     $null = Remove-FileIfUnchanged -TargetFile $file -Sha256 @(Get-FileSha256 -Path $file) -BackupRoot $backupRoot `
         -BackupRelativePath $relative -StopAt $projectRoot -WhatIf:$WhatIfPreference
-    Write-Change -Detail "remove $relative"
+    Write-Change -Detail $relative
 }
 
 $state = Join-Path $projectRoot (Join-Path ".claude" "state")
@@ -108,7 +108,7 @@ if (Test-Path -LiteralPath $state) {
     if ((-not $WhatIfPreference) -and $PSCmdlet.ShouldProcess($state, "Remove the 1.x gate state")) {
         Remove-Item -LiteralPath $state -Recurse -Force
     }
-    Write-Change -Detail ("remove " + (Join-Path ".claude" "state") + " (the old gate's state)")
+    Write-Change -Detail ((Join-Path ".claude" "state") + " (the old gate's state)")
 }
 
 # why: these were a starting point the project could edit; an edit is the project's, so only an untouched copy goes.
@@ -118,7 +118,7 @@ foreach ($relative in @($manifest.Retired.Project.Keys | Sort-Object)) {
     $result = Remove-FileIfUnchanged -TargetFile $file -Sha256 $manifest.Retired.Project[$relative] -BackupRoot $backupRoot `
         -BackupRelativePath $relative -StopAt $projectRoot -WhatIf:$WhatIfPreference
 
-    if ($result -eq "Removed") { Write-Change -Detail "remove $relative" }
+    if ($result -eq "Removed") { Write-Change -Detail $relative }
     elseif ($result -eq "Kept") {
         Write-Status -Label "WARN" -Detail "kept $($relative): edited since Tazuna installed it"
 
@@ -126,7 +126,7 @@ foreach ($relative in @($manifest.Retired.Project.Keys | Sort-Object)) {
             $steps = [regex]::Match([System.IO.File]::ReadAllText($file), '(?ms)^\$VerificationSteps = @\((.*?)^\)')
             if ($steps.Success -and $steps.Groups[1].Value.Trim()) {
                 Write-Host "            its steps, to set as the gate command:"
-                foreach ($line in ($steps.Groups[1].Value.Trim() -split "\r?\n")) { Write-Host "              $($line.Trim())" }
+                foreach ($line in ($steps.Groups[1].Value.Trim("`r", "`n") -split "\r?\n")) { Write-Host "          $($line.TrimEnd())" }
             }
             Write-Host "            the old gate no longer runs it; delete it once the toolkit gate runs these steps"
         }
@@ -161,7 +161,7 @@ if (Test-Path -LiteralPath $settingsFile) {
 
     if (($settings | ConvertTo-Json -Depth 100) -ne $before) {
         Save-Json -Relative $settingsRelative -Value $settings
-        Write-Change -Detail "remove the old gate's hooks and verify.ps1 rules from $settingsRelative"
+        Write-Change -Detail "the old gate's hooks and verify.ps1 rules from $settingsRelative"
     }
 }
 
@@ -188,11 +188,11 @@ if (Test-Path -LiteralPath $cursorFile) {
     if (($removedHere -gt 0) -and ($left -eq 0)) {
         $null = Remove-FileIfUnchanged -TargetFile $cursorFile -Sha256 @(Get-FileSha256 -Path $cursorFile) -BackupRoot $backupRoot `
             -BackupRelativePath $cursorRelative -StopAt $projectRoot -WhatIf:$WhatIfPreference
-        Write-Change -Detail "remove $cursorRelative (it held only the old gate)"
+        Write-Change -Detail "$cursorRelative (it held only the old gate)"
     }
     elseif ($removedHere -gt 0) {
         Save-Json -Relative $cursorRelative -Value $cursor
-        Write-Change -Detail "remove the old gate's hooks from $cursorRelative"
+        Write-Change -Detail "the old gate's hooks from $cursorRelative"
     }
 }
 
@@ -206,7 +206,7 @@ if (Test-Path -LiteralPath $gitignore) {
             Save-Backup -Relative ".gitignore"
             Set-Utf8Content -Path $gitignore -Value (($kept -join [Environment]::NewLine) + [Environment]::NewLine)
         }
-        Write-Change -Detail "remove .claude/state/ from .gitignore"
+        Write-Change -Detail ".claude/state/ from .gitignore"
     }
 }
 
