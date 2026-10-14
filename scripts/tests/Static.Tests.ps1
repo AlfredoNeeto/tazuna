@@ -262,15 +262,11 @@ Test-Case -Name "the harness has its own project instructions, naming the self-t
     return $true
 }
 
-Test-Case -Name "SK3 the kit skills keep their contract: fix-bug proves with a failing test, ship never publishes" -Check {
-    $fixBug = [System.IO.File]::ReadAllText((Join-Path $repoRoot "user\skills\fix-bug\SKILL.md"))
+Test-Case -Name "SK3 ship keeps its contract: it verifies with the project gate and never publishes" -Check {
     $ship = [System.IO.File]::ReadAllText((Join-Path $repoRoot "user\skills\ship\SKILL.md"))
 
-    # invariant: these are the sentences that make each skill what the README promises.
-    foreach ($phrase in @("smallest test that fails", "every caller", "before\s+and after", "verify\.ps1", "Never weaken, skip or delete a\s+test")) {
-        if ($fixBug -notmatch $phrase) { return "fix-bug no longer says: $phrase" }
-    }
-    foreach ($phrase in @("verify\.ps1", "Conventional Commit", "Draft the pull request", "Never run ``git push``", "never merge", "Stop before publishing")) {
+    # invariant: these are the sentences that make the skill what the README promises.
+    foreach ($phrase in @("tlc harness status", "Conventional Commit", "Draft the pull request", "Never run ``git push``", "never merge", "Stop before publishing")) {
         if ($ship -notmatch $phrase) { return "ship no longer says: $phrase" }
     }
     return $true

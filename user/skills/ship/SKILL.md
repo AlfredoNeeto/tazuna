@@ -9,8 +9,8 @@ Publishing is the owner's decision. This prepares everything up to it, then stop
 
 ## Steps
 
-1. **Verify.** Run `.\.claude\scripts\verify.ps1`, or the project's own build and tests. A
-   pass on unchanged sources is reported at once. Stop on a failure: fix it or report it.
+1. **Verify.** Run the test command `tlc harness status` names for the project's gate, or,
+   with none set, the project's own build and tests. Stop on a failure: fix it or report it.
 2. **Read the diff.** `git status`, then `git diff` and `git diff --staged`, untracked files
    included. Look for changes nobody asked for, debug leftovers, commented-out code, secrets,
    generated files, and tests that were weakened, skipped or deleted. Raise each one; do not

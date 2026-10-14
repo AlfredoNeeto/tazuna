@@ -84,8 +84,8 @@ try {
         if ($run.Output -notmatch "plugin install ponytail@ponytail exited 1") { return ("the failure does not name the plugin: " + $run.Output) }
         return $true
     }
-    Test-Case -Name "SK1 setup installs fix-bug and ship for Claude Code, and doctor names either one missing" -Check {
-        $kit = @("fix-bug", "ship")
+    Test-Case -Name "SK1 setup installs ship for Claude Code, and doctor names it missing" -Check {
+        $kit = @("ship")
 
         $claude = Get-SetupRun -Key "fresh"
         $missing = @($kit | Where-Object { -not (Test-Path -LiteralPath (Join-Path $claude.Config "skills\$_\SKILL.md")) })
@@ -103,7 +103,7 @@ try {
             foreach ($skill in $kit) { Move-Item -LiteralPath (Join-Path $moved $skill) -Destination (Join-Path $claude.Config "skills") }
         }
 
-        if ($doctor.Code -eq 0) { return "doctor passed without fix-bug and ship" }
+        if ($doctor.Code -eq 0) { return "doctor passed without ship" }
         $unnamed = @($kit | Where-Object { $doctor.Output -notmatch ("skill " + [regex]::Escape($_) + " is missing") })
         if ($unnamed.Count -gt 0) { return ("doctor did not name: " + ($unnamed -join ", ")) }
         return $true

@@ -143,7 +143,7 @@ flowchart TD
 | Legacy code, ambiguous requirements, several sessions | `/tlc-spec-driven` |
 | Work already decided in a work item, PRD or RFC | `/tlc-plan` to cut it into tasks, `/tlc-implement` to build each one |
 | Risky: security, money, data, a public contract | `/review-change`, even when the change is small |
-| A reported bug | `/fix-bug`: a failing test first, then the root cause |
+| A reported bug | ask for a failing test first, then the fix at the root cause |
 | A finished change to hand over | `/ship`: verify, read the diff, write the commit and the PR text; it never pushes |
 
 With `/tlc-spec-lean I want X`, the agent reads the code, asks you only about decisions that are yours, writes `.specs/features/<feature>/plan.md` and stops until you approve it. Each criterion becomes a check with the test that settles it. The agent builds, and a fresh Verifier that never saw the implementation proves every check. A changed screen is opened with Playwright before it is done.

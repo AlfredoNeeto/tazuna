@@ -107,8 +107,8 @@ try {
         return $true
     }
 
-    Test-Case -Name "SK2 setup installs fix-bug and ship for Cursor too, and doctor names either one missing there" -Check {
-        $kit = @("fix-bug", "ship")
+    Test-Case -Name "SK2 setup installs ship for Cursor too, and doctor names it missing there" -Check {
+        $kit = @("ship")
         $run = Get-CursorSetupRun -Key "both" -Cursor
         if ($run.Code -ne 0) { return "exit $($run.Code): $($run.Output)" }
         $missing = @($kit | Where-Object { -not (Test-Path -LiteralPath (Join-Path $run.Cursor "skills\$_\SKILL.md")) })
@@ -126,7 +126,7 @@ try {
             foreach ($skill in $kit) { Move-Item -LiteralPath (Join-Path $moved $skill) -Destination (Join-Path $cursorOnly.Cursor "skills") }
         }
 
-        if ($doctor.Code -ne 1) { return "doctor exited $($doctor.Code) without fix-bug and ship in Cursor, expected 1" }
+        if ($doctor.Code -ne 1) { return "doctor exited $($doctor.Code) without ship in Cursor, expected 1" }
         $unnamed = @($kit | Where-Object { $doctor.Output -notmatch ("skill " + [regex]::Escape($_) + " is missing from") })
         if ($unnamed.Count -gt 0) { return ("doctor did not name: " + ($unnamed -join ", ")) }
         return $true

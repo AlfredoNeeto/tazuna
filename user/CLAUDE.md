@@ -23,7 +23,8 @@ Scale the process to the change:
   `/tlc-implement` builds one and has it verified.
 - **Critical or high-risk** (security, money, data, public contracts): `/review-change` even
   when the change is small.
-- **A reported bug:** `/fix-bug`. **A finished change to hand over:** `/ship`; it never pushes.
+- **A reported bug:** reproduce it with a failing test first, then fix the root cause.
+  **A finished change to hand over:** `/ship`; it never pushes.
 - **Uncertain shape:** plan before editing; investigate independent areas with `Explore`
   subagents so the findings come back summarized.
 

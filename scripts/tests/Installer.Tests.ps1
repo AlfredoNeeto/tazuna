@@ -236,6 +236,29 @@ try {
         return $true
     }
 
+    Test-Case -Name "RM4 on a 1.x machine with no record, install removes fix-bug as 1.5.0 shipped it and keeps an edited one" -Check {
+
+        $fixBug = Join-Path $scratch "skills\fix-bug\SKILL.md"
+        $shipped = [System.IO.File]::ReadAllText((Join-Path $PSScriptRoot "fixtures\1.5.0\fix-bug.SKILL.md")).Replace("`r`n", "`n")
+
+        # why: a checkout's line endings follow core.autocrlf, so 1.x installed either form.
+        foreach ($text in @($shipped, $shipped.Replace("`n", "`r`n"))) {
+            Remove-Item -LiteralPath (Join-Path $scratch ".tazuna-installed.json") -Force -ErrorAction SilentlyContinue
+            New-Item -ItemType Directory -Path (Split-Path -Parent $fixBug) -Force | Out-Null
+            [System.IO.File]::WriteAllText($fixBug, $text)
+            & (Join-Path $scriptsRoot "install.ps1") 6>$null | Out-Null
+            if (Test-Path -LiteralPath (Split-Path -Parent $fixBug)) { return "fix-bug as 1.5.0 shipped it is still installed" }
+        }
+
+        New-Item -ItemType Directory -Path (Split-Path -Parent $fixBug) -Force | Out-Null
+        [System.IO.File]::WriteAllText($fixBug, $shipped + "`nmy own note`n")
+        $output = Invoke-InstallOutput
+        if (-not (Test-Path -LiteralPath $fixBug)) { return "an edited fix-bug was removed" }
+        if ($output -notmatch "WARN\s+kept skills\\fix-bug\\SKILL\.md") { return ("no WARN for the edited fix-bug: " + $output) }
+        Remove-Item -LiteralPath (Split-Path -Parent $fixBug) -Recurse -Force
+        return $true
+    }
+
     Test-Case -Name "health-check reports an orphaned skill" -Check {
 
         # Drift is two-directional. install.ps1 copies but never removes, so a
